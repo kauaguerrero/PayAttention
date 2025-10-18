@@ -55,18 +55,23 @@
         .saldo-total { font-weight: 700; color: #167977; }
 
         .btn-bd-processar {
-          --bs-btn-font-weight: 600;
-          --bs-btn-color: var(--bg-succes-subtle);
-          --bs-btn-bg: var(--bg-success-subtle);
-          --bs-btn-border-color: var(--bd-success-subtle);
-          --bs-btn-hover-color: var(--bs-success-subtle);
-          --bs-btn-hover-bg: #{shade-color($bd-violet, 10%)};
-          --bs-btn-hover-border-color: #{shade-color($bd-violet, 10%)};
-          --bs-btn-focus-shadow-rgb: var(--bd-violet-rgb);
-          --bs-btn-active-color: var(--bs-btn-hover-color);
-          --bs-btn-active-bg: #{shade-color($bd-violet, 20%)};
-          --bs-btn-active-border-color: #{shade-color($bd-violet, 20%)};
+
+        font-weight: 600;
+        padding: 10px;
+        color: #fff;
+        background-color: #198754;
+        border-color: #badbcc;
+
+        transition: color .15s ease-in-out, background-color .15s ease-in-out, border-color .15s ease-in-out;
         }
+
+        .btn-bd-processar:hover {
+          color: #fff;
+          background-color: #68ab7a;
+          border-color: #badbcc; /
+        }
+
+
     </style>
 
     {% block head_extra %}

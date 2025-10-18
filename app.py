@@ -16,7 +16,10 @@ app.secret_key = 'sua_chave_secreta_aqui'
 db.init_app(app)
 
 
-# --- FUNÇÕES AUXILIARES DE LÓGICA ---
+# Funções Auxiliares
+
+def buscar_transacao(id_transacao, id_usuario):
+    return Transacao.query.filter_by(id_transacao=id_transacao, id_usuario=id_usuario).first()
 
 def extrair_beneficiario(descricao_completa):
     # (Sua função continua a mesma, sem alterações)
@@ -430,7 +433,7 @@ def cadastrar_transacao():
 @app.route("/editar/<int:id>", methods=["GET", "POST"])
 @login_required
 def editar_transacao(id):
-    transacao_db = buscar_tranascao_por_cod(id, session['id_usuario'])
+    transacao_db = buscar_transacao(id, session['id_usuario'])
     if not transacao_db: flash("Transação não encontrada.", "error"); return redirect(url_for("listar_transacoes"))
     if request.method == "POST":
         transacao_db.descricao = request.form["descricao"];
@@ -447,7 +450,7 @@ def editar_transacao(id):
 @app.route("/apagar/<int:id>", methods=["POST"])
 @login_required
 def apagar_transacao(id):
-    transacao_db = buscar_transacao_por_cod(id, session['id_usuario'])
+    transacao_db = buscar_transacao(id, session['id_usuario'])
     if transacao_db:
         db.session.delete(transacao_db); db.session.commit(); flash("Transação excluída.", "success")
     else:

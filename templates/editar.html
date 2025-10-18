@@ -3,9 +3,9 @@
 {% block title %} Editar Transação | Pay Attention {% endblock %}
 
 {% block head_extra %}
-    <style>
+<style xmlns:color="http://www.w3.org/1999/xhtml">
         :root {
-            --cor-principal: #167977;
+            --cor-principal: #2b5735;
             --cor-sucesso: #28a745;
             --cor-perigo: #d9534f;
             --cor-fundo-card: #ffffff;
@@ -96,11 +96,6 @@
                                value="{{ transacao['beneficiario'] }}">
                     </div>
                 </div>
-
-                <button class="btn btn-primary-custom w-100 mt-3" type="submit">
-                    <i class="bi bi-arrow-repeat"></i> Atualizar Transação
-                </button>
-
                 <div class="mb-3">
                     <label class="form-label" for="categoria">Categoria</label>
                     <select class="form-select" id="categoria" name="categoria">
@@ -112,8 +107,8 @@
                         {% endfor %}
                     </select>
                 </div>
-                <button class="btn btn-primary w-100" type="submit">
-                    <i class="bi bi-check-circle-fill"></i> Salvar Alterações
+                <button class="btn-bd-processar w-100 mt-3" type="submit">
+                    <i class="bi bi-arrow-repeat"></i> Atualizar Transação
                 </button>
             </form>
         </div>
