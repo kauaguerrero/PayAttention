@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Categorizar Transações Importadas{% endblock %}
+
+{% block head_extra %}
+<style>
+    .categoria-select { min-width: 180px; }
+    .card {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        border: 1px solid #e9eef0;
+    }
+    /* Estilo para destacar as linhas que serão atualizadas */
+    .highlight-update {
+        transition: background-color 0.5s ease-out;
+        background-color: #d1e7dd !important; /* Verde claro do Bootstrap */
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card p-4">
+    <h3 class="mb-2">Passo 2 de 3: Organize as suas Novas Transações</h3>
+    <p class="text-muted">
+        Dica: Ao categorizar uma transação, tentaremos aplicar a mesma categoria a outras transações com o mesmo beneficiário!
+    </p>
+
+    <form method="POST" action="{{ url_for('categorizar_transacoes_importadas') }}">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover" id="tabela-categorizacao">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Descrição</th>
+                        <th class="text-end">Valor (R$)</th>
+                        <th class="text-center" style="width: 200px;">Categoria</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for transacao in transacoes %}
+                    <!-- MUDANÇA: Adicionado 'data-beneficiario' para o JS saber qual beneficiário procurar -->
+                    <tr data-beneficiario="{{ transacao.beneficiario }}">
+                        <td>{{ transacao.data.split('T')[0] }}</td>
+                        <td>{{ transacao.descricao }}</td>
+                        <td class="text-end fw-bold text-{{ 'success' if transacao.tipo == 'receita' else 'danger' }}">
+                            {{ "%.2f" | format(transacao.valor) }}
+                        </td>
+                        <td class="text-center">
+                            <!-- MUDANÇA: Adicionada a classe 'categoria-select' para o JS encontrar os dropdowns -->
+                            <select name="categoria_{{ transacao.id }}" class="form-select form-select-sm categoria-select" required>
+                                {% set categorias = ['A Classificar', 'Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Saúde', 'Investimento', 'Outros'] %}
+                                {% for cat in categorias %}
+                                    <option value="{{ cat }}" {% if transacao.categoria == cat %}selected{% endif %}>
+                                        {{ '📈 ' if cat == 'Investimento' else '' }}{{ cat }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center p-4">Nenhuma transação para categorizar.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mt-4 text-center">
+            <button type="submit" class="btn btn-primary btn-lg">
+                <i class="bi bi-check-circle-fill"></i> Salvar Categorias e ir para o Dashboard
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const tabela = document.getElementById('tabela-categorizacao');
+
+        // Usamos "event delegation": um único 'listener' na tabela inteira
+        // para observar mudanças em qualquer um dos dropdowns de categoria.
+        tabela.addEventListener('change', function (event) {
+            // Verifica se o que mudou foi realmente um dropdown de categoria
+            if (event.target && event.target.classList.contains('categoria-select')) {
+                const selectAlterado = event.target;
+                const novaCategoria = selectAlterado.value;
+
+                // Não faz nada se a nova categoria for a padrão "A Classificar"
+                if (novaCategoria === 'A Classificar') {
+                    return;
+                }
+
+                // Encontra a linha (tr) onde a mudança ocorreu para obter o beneficiário
+                const linhaAlterada = selectAlterado.closest('tr');
+                const beneficiarioAlvo = linhaAlterada.dataset.beneficiario;
+
+                // Se o beneficiário não estiver definido, não há o que fazer
+                if (!beneficiarioAlvo) {
+                    return;
+                }
+
+                // Encontra TODAS as linhas da tabela
+                const todasAsLinhas = tabela.querySelectorAll('tbody tr');
+
+                // Percorre todas as linhas para encontrar outras com o mesmo beneficiário
+                todasAsLinhas.forEach(linha => {
+                    if (linha.dataset.beneficiario === beneficiarioAlvo) {
+                        // Encontra o dropdown de categoria dentro desta linha
+                        const selectParaAtualizar = linha.querySelector('.categoria-select');
+
+                        // SÓ atualiza se a categoria atual ainda for "A Classificar",
+                        // para não sobrescrever uma escolha que o utilizador já tenha feito manualmente.
+                        if (selectParaAtualizar && selectParaAtualizar.value === 'A Classificar') {
+                            selectParaAtualizar.value = novaCategoria;
+
+                            // Adiciona um destaque visual para mostrar que a linha foi atualizada
+                            linha.classList.add('highlight-update');
+                            setTimeout(() => {
+                                linha.classList.remove('highlight-update');
+                            }, 1500); // Remove o destaque após 1.5 segundos
+                        }
+                    }
+                });
+            }
+        });
+    });
+</script>
+{% endblock %}
+

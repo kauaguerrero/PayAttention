@@ -16,19 +16,28 @@ app.secret_key = 'sua_chave_secreta_aqui'
 db.init_app(app)
 
 
-# Funções Auxiliares
+# --- FUNÇÕES AUXILIARES ---
+
+def format_currency_brl(value):
+    if value is None:
+        return "0,00"
+    formatted_value = f"{value:,.2f}"
+    return formatted_value.replace(',', 'X').replace('.', ',').replace('X', '.')
+
+# Registra a função como um filtro no Jinja2
+app.jinja_env.filters['format_brl'] = format_currency_brl
+
 
 def buscar_transacao(id_transacao, id_usuario):
     return Transacao.query.filter_by(id_transacao=id_transacao, id_usuario=id_usuario).first()
 
+
 def extrair_beneficiario(descricao_completa):
-    # (Sua função continua a mesma, sem alterações)
     try:
         partes = descricao_completa.split(' - ')
         if len(partes) > 1:
             beneficiario = partes[1].split(' - ')[0].strip()
-            if 'Agência:' in beneficiario or 'Conta:' in beneficiario:
-                return partes[0]
+            if 'Agência:' in beneficiario or 'Conta:' in beneficiario: return partes[0]
             return beneficiario
         return descricao_completa.split(',')[0]
     except:
@@ -58,11 +67,7 @@ def calcular_saldo(usuario_id):
     saldo = entrada_total - saida_total
     return saldo, entrada_total, saida_total
 
-
-# --- CLASSE DE EXTRAÇÃO DE PDF ---
-
-class ExtratorPDFSemIA:
-    # (Sua classe continua a mesma, sem alterações)
+class ExtratorPDF:
     def __init__(self):
         self.padroes_data = [r'\b(\d{2})[/\-.](\d{2})[/\-.](\d{4})\b', r'\b(\d{2})[/\-.](\d{2})[/\-.](\d{2})\b',
                              r'\b(\d{4})[/\-.](\d{2})[/\-.](\d{2})\b']
@@ -161,12 +166,52 @@ class ExtratorPDFSemIA:
             transacoes.append(transacao)
         return transacoes
 
+# LÓGICA DE PROCESSAMENTO DE FICHEIRO
 
-# --- FUNÇÕES DE PROCESSAMENTO DE FICHEIROS ---
+def processar_csv(arquivo, usuario_id):
+    try:
+        stream = io.StringIO(arquivo.stream.read().decode("UTF-8"), newline=None)
+        csv_reader = csv.DictReader(stream)
+        novas_transacoes = []
+
+        for row in csv_reader:
+            valor_num = Decimal(row.get('Valor', '0').strip())
+            data_str = row.get('Data', '')
+            data_transacao = datetime.strptime(data_str, '%d/%m/%Y').date() if data_str else datetime.now().date()
+
+            nova_transacao = Transacao(
+                descricao=row.get('Descrição', 'Não informado'),
+                valor=abs(valor_num),
+                tipo='receita' if valor_num > 0 else 'despesa',
+                beneficiario=extrair_beneficiario(row.get('Descrição', '')),
+                id_usuario=usuario_id,
+                data=data_transacao,
+                categoria='A Classificar'  # Categoria padrão
+            )
+            novas_transacoes.append(nova_transacao)
+
+        if not novas_transacoes:
+            flash('Nenhuma transação encontrada no ficheiro CSV.', 'warning')
+            return redirect(url_for('importar_extrato'))
+
+        db.session.add_all(novas_transacoes)
+        db.session.flush()  # Atribui IDs às novas transações antes do commit
+
+        ids_para_categorizar = [t.id_transacao for t in novas_transacoes]
+        session['transacoes_a_categorizar'] = ids_para_categorizar
+
+        db.session.commit()
+        flash(f'{len(novas_transacoes)} transações importadas! Por favor, categorize-as abaixo.', 'info')
+        return redirect(url_for('categorizar_transacoes_importadas'))
+
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ocorreu um erro ao processar o ficheiro CSV: {e}', 'danger')
+        return redirect(url_for("importar_extrato"))
 
 def processar_pdf(arquivo, usuario_id):
     try:
-        extrator = ExtratorPDFSemIA()
+        extrator = ExtratorPDF()
         transacoes_extraidas = extrator.extrair_transacoes(arquivo)
 
         if not transacoes_extraidas:
@@ -200,7 +245,7 @@ def processar_pdf(arquivo, usuario_id):
             flash(f'{len(novas_transacoes)} transações importadas!', 'success')
         if recusadas > 0:
             flash(f'{recusadas} despesas ignoradas por saldo insuficiente.', 'warning')
-        return redirect(url_for('listar_transacoes'))
+        return redirect(url_for('categorizar_importadas'))
 
     except Exception as e:
         db.session.rollback();
@@ -209,56 +254,14 @@ def processar_pdf(arquivo, usuario_id):
         # CORREÇÃO: Apontar para o endpoint correto
         return redirect(url_for('importar_extrato'))
 
-
-def processar_csv(arquivo, usuario_id):
-    try:
-        stream = io.StringIO(arquivo.stream.read().decode("UTF-8"), newline=None)
-        csv_reader = csv.DictReader(stream)
-        novas_transacoes = [];
-        recusadas = 0
-        saldo_atual, _, _ = calcular_saldo(usuario_id)
-
-        for row in csv_reader:
-            valor_str = row.get('Valor', '0').strip()
-            valor_num = Decimal(valor_str)
-            tipo = 'receita' if valor_num > 0 else 'despesa'
-            valor_final = abs(valor_num)
-
-            if tipo == "despesa":
-                if valor_final > saldo_atual: recusadas += 1; continue
-                saldo_atual -= valor_final
-            else:
-                saldo_atual += valor_final
-
-            data_str = row.get('Data', '')
-            data_transacao = datetime.strptime(data_str, '%d/%m/%Y').date() if data_str else datetime.utcnow().date()
-            nova_transacao = Transacao(descricao=row.get('Descrição', 'Não informado'), valor=valor_final, tipo=tipo,
-                                       beneficiario=extrair_beneficiario(row.get('Descrição', '')),
-                                       id_usuario=usuario_id, data=data_transacao)
-            novas_transacoes.append(nova_transacao)
-
-        if novas_transacoes:
-            db.session.add_all(novas_transacoes);
-            db.session.commit()
-            flash(f'{len(novas_transacoes)} transações importadas com sucesso!', 'success')
-        if recusadas > 0:
-            flash(f'{recusadas} despesas ignoradas por saldo insuficiente.', 'warning')
-        return redirect(url_for("listar_transacoes"))
-    except Exception as e:
-        db.session.rollback();
-        print(f"Erro ao processar CSV: {e}")
-        flash(f'Ocorreu um erro ao processar o ficheiro CSV: {e}', 'danger')
-        return redirect(url_for("importar_extrato"))
-
-
-# --- ROTA UNIFICADA DE IMPORTAÇÃO (O "DISPATCHER") ---
+# --- ROTA UNIFICADA DE IMPORTAÇÃO ---
 
 @app.route('/importar-extrato', methods=['GET', 'POST'])
 @login_required
 def importar_extrato():
     if request.method == 'POST':
         if 'arquivo_extrato' not in request.files or not request.files['arquivo_extrato'].filename:
-            flash('Nenhum ficheiro selecionado!', 'danger');
+            flash('Nenhum ficheiro selecionado!', 'danger')
             return redirect(request.url)
 
         arquivo = request.files['arquivo_extrato']
@@ -273,32 +276,54 @@ def importar_extrato():
             flash('Formato não suportado. Use CSV ou PDF.', 'warning')
             return redirect(request.url)
 
-    return render_template('importar_extrato.html')  # A página de upload
+    return render_template('importar_extrato.html')
 
 
-@app.route("/apagar_todas", methods=["POST"])
+
+@app.route('/categorizar-importadas', methods=['GET', 'POST'])
 @login_required
-def apagar_todas_transacoes():
+def categorizar_transacoes_importadas():
     usuario_id = session['id_usuario']
-    try:
-        Transacao.query.filter_by(id_usuario=usuario_id).delete()
+    ids_para_categorizar = session.get('transacoes_a_categorizar', [])
+
+    if not ids_para_categorizar:
+        return redirect(url_for('listar_transacoes'))
+
+    if request.method == 'POST':
+        for transacao_id in ids_para_categorizar:
+            transacao = buscar_transacao(transacao_id, usuario_id)
+            if transacao:
+                nova_categoria = request.form.get(f'categoria_{transacao_id}')
+                if nova_categoria:
+                    transacao.categoria = nova_categoria
+
         db.session.commit()
-        flash("Todas as suas transações foram excluídas com sucesso!", "success")
-    except Exception as e:
-        db.session.rollback()
-        print(f"Erro ao apagar todas as transações: {e}")
-        flash("Ocorreu um erro ao tentar excluir as transações.", "danger")
-    return redirect(url_for('listar_transacoes'))
+        session.pop('transacoes_a_categorizar', None)  # Limpa a sessão
+        flash("Transações categorizadas com sucesso!", "success")
+        return redirect(url_for('listar_transacoes'))
+
+    # Método GET: Mostra a página de categorização
+    transacoes = Transacao.query.filter(Transacao.id_transacao.in_(ids_para_categorizar),
+                                        Transacao.id_usuario == usuario_id).all()
+    transacoes_dict = [t.to_dict() for t in transacoes]
+
+    return render_template('categorizar_importadas.html', transacoes=transacoes_dict)
+
+
+# --- ROTA DO DASHBOARD (ATUALIZADA) ---
 
 @app.route("/")
 @app.route("/dashboard")
 @login_required
 def listar_transacoes():
-    usuario_id = session['id_usuario'];
+    usuario_id = session['id_usuario']
     hoje = datetime.now()
+
     saldo, entrada_total, saida_total = calcular_saldo(usuario_id)
+
     meta_salva = Meta.query.filter_by(id_usuario=usuario_id, mes=hoje.month, ano=hoje.year).first()
     meta_investimento = meta_salva.valor if meta_salva else Decimal('0.00')
+
     total_investido_query = db.session.query(func.sum(Transacao.valor)).filter(Transacao.id_usuario == usuario_id,
                                                                                Transacao.tipo == 'despesa',
                                                                                Transacao.categoria.ilike(
@@ -308,21 +333,47 @@ def listar_transacoes():
                                                                                func.extract('year',
                                                                                             Transacao.data) == hoje.year).scalar()
     total_investido = total_investido_query or Decimal('0.00')
+
+    dados_gastos_categoria = db.session.query(
+        Transacao.categoria,
+        func.sum(Transacao.valor).label('total_gasto')
+    ).filter(
+        Transacao.id_usuario == usuario_id,
+        Transacao.tipo == 'despesa',
+        func.extract('month', Transacao.data) == hoje.month,
+        func.extract('year', Transacao.data) == hoje.year
+    ).group_by(Transacao.categoria).order_by(func.sum(Transacao.valor).desc()).all()
+
+    categorias_labels = [item[0] for item in dados_gastos_categoria if item[0]]
+    gastos_valores = [float(item[1]) for item in dados_gastos_categoria if item[0]]
+
+    cores_categoria = {
+        'Alimentação': '#FF6384', 'Transporte': '#36A2EB', 'Moradia': '#FFCE56',
+        'Lazer': '#4BC0C0', 'Saúde': '#9966FF', 'Investimento': '#FF9F40',
+        'Outros': '#C9CBCF', 'A Classificar': '#E7E9ED'
+    }
+
     todas_transacoes = Transacao.query.filter_by(id_usuario=usuario_id).order_by(Transacao.data.desc()).all()
     transacoes_dict = [t.to_dict() for t in todas_transacoes]
-    return render_template("dashboard.html", transacoes=transacoes_dict, saldo=float(saldo),
-                           entrada_total=float(entrada_total), saida_total=float(saida_total),
-                           meta_investimento=float(meta_investimento), total_investido=float(total_investido))
 
+    return render_template(
+        "dashboard.html",
+        transacoes=transacoes_dict,
+        saldo=saldo,
+        entrada_total=float(entrada_total),
+        saida_total=float(saida_total),
+        meta_investimento=float(meta_investimento),
+        total_investido=float(total_investido),
+        categorias_labels=categorias_labels,
+        gastos_valores=gastos_valores,
+        cores_categoria=cores_categoria
+    )
 
-# (Todas as outras rotas: login, logout, cadastrar_usuario, perfil, transações, meta, etc., continuam aqui)
-# ...
 @app.route("/login", methods=["GET", "POST"])
 def fazer_login():
     if 'id_usuario' in session: return redirect(url_for("listar_transacoes"))
     if request.method == "POST":
-        email = request.form.get("email");
-        senha_str = request.form.get("senha")
+        email, senha_str = request.form.get("email"), request.form.get("senha")
         usuario = Usuario.query.filter_by(email=email).first()
         if usuario and verificar_senha(senha_str, usuario.senha):
             session['id_usuario'] = usuario.id_usuario;
@@ -336,9 +387,8 @@ def fazer_login():
 
 @app.route("/logout")
 def fazer_logout():
-    session.pop('id_usuario', None);
-    session.pop('nome_usuario', None)
-    flash("Você saiu da sua conta com sucesso.", "success");
+    session.clear();
+    flash("Você saiu da sua conta com sucesso.", "success")
     return redirect(url_for("fazer_login"))
 
 
@@ -347,24 +397,17 @@ def cadastrar_usuario():
     if 'id_usuario' in session: return redirect(url_for("listar_transacoes"))
     if request.method == "POST":
         nome, email, senha_str = request.form.get("nome"), request.form.get("email"), request.form.get("senha")
-        if not nome or not email or len(senha_str) < 7: flash(
-            "Preencha todos os campos e use uma senha com no mínimo 7 caracteres.", "error"); return redirect(
+        if not nome or not email or len(senha_str) < 7: flash("Preencha todos os campos...", "error"); return redirect(
             url_for("cadastrar_usuario"))
         if Usuario.query.filter_by(email=email).first(): flash("Este e-mail já está cadastrado.",
                                                                "error"); return redirect(url_for("cadastrar_usuario"))
-        senha_hashed = hash_senha(senha_str)
-        novo_usuario = Usuario(nome=nome, email=email, senha=senha_hashed)
-        try:
-            db.session.add(novo_usuario);
-            db.session.commit()
-            session['id_usuario'] = novo_usuario.id_usuario;
-            session['nome_usuario'] = novo_usuario.nome.split()[0]
-            flash("Cadastro realizado com sucesso!", "success");
-            return redirect(url_for("listar_transacoes"))
-        except Exception as e:
-            db.session.rollback(); print(f"Erro de DB: {e}"); flash("Ocorreu um erro ao salvar o usuário.",
-                                                                    "error"); return redirect(
-                url_for("cadastrar_usuario"))
+        novo_usuario = Usuario(nome=nome, email=email, senha=hash_senha(senha_str))
+        db.session.add(novo_usuario);
+        db.session.commit()
+        session['id_usuario'] = novo_usuario.id_usuario;
+        session['nome_usuario'] = novo_usuario.nome.split()[0]
+        flash("Cadastro realizado com sucesso!", "success");
+        return redirect(url_for("listar_transacoes"))
     return render_template("cadastro_usuario.html")
 
 
@@ -373,35 +416,16 @@ def cadastrar_usuario():
 def gerenciar_perfil():
     usuario = Usuario.query.get(session['id_usuario'])
     if request.method == "POST":
-        novo_nome, novo_email = request.form.get("nome"), request.form.get("email")
-        senha_atual_str, nova_senha_str = request.form.get("senha_atual"), request.form.get("nova_senha")
-        if not usuario: flash("Erro: Usuário não encontrado.", "error"); return redirect(url_for("listar_transacoes"))
-        if not senha_atual_str or not verificar_senha(senha_atual_str, usuario.senha): flash("Senha atual incorreta.",
-                                                                                             "error"); return redirect(
-            url_for("gerenciar_perfil"))
-        alteracao_feita = False
-        if novo_nome and novo_nome != usuario.nome: usuario.nome = novo_nome; session['nome_usuario'] = \
-        novo_nome.split()[0]; alteracao_feita = True
-        if novo_email and novo_email != usuario.email:
-            if Usuario.query.filter(Usuario.email == novo_email,
-                                    Usuario.id_usuario != session['id_usuario']).first(): flash(
-                "Este e-mail já está sendo usado por outra conta.", "error"); return redirect(
-                url_for("gerenciar_perfil"))
-            usuario.email = novo_email;
-            alteracao_feita = True
-        if nova_senha_str:
-            if len(nova_senha_str) < 7: flash("A nova senha deve ter no mínimo 7 caracteres.",
-                                              "error"); return redirect(url_for("gerenciar_perfil"))
-            usuario.senha = hash_senha(nova_senha_str);
-            alteracao_feita = True
-        if alteracao_feita:
-            try:
-                db.session.commit(); flash("Seus dados de perfil foram atualizados com sucesso!", "success")
-            except Exception as e:
-                db.session.rollback(); print(f"Erro de DB ao atualizar perfil: {e}"); flash(
-                    "Ocorreu um erro ao salvar as alterações.", "error")
-        else:
-            flash("Nenhuma alteração foi detectada ou salva.", "info")
+        if not verificar_senha(request.form.get("senha_atual"), usuario.senha):
+            flash("Senha atual incorreta.", "error");
+            return redirect(url_for("gerenciar_perfil"))
+        usuario.nome = request.form.get("nome");
+        usuario.email = request.form.get("email")
+        nova_senha = request.form.get("nova_senha")
+        if nova_senha: usuario.senha = hash_senha(nova_senha)
+        db.session.commit();
+        flash("Perfil atualizado!", "success")
+        session['nome_usuario'] = usuario.nome.split()[0]  # Atualiza o nome na sessão
         return redirect(url_for("gerenciar_perfil"))
     return render_template("perfil.html", usuario=usuario)
 
@@ -422,12 +446,10 @@ def cadastrar_transacao():
                                                         "error"); return redirect(url_for("cadastrar_transacao"))
     nova_transacao = Transacao(descricao=descricao, valor=valor, tipo=tipo, beneficiario=beneficiario,
                                id_usuario=usuario_id, categoria=categoria)
-    try:
-        db.session.add(nova_transacao); db.session.commit(); flash("Transação cadastrada!", "success"); return redirect(
-            url_for("listar_transacoes"))
-    except Exception as e:
-        db.session.rollback(); print(f"Erro ao salvar: {e}"); flash("Erro ao cadastrar.", "error"); return redirect(
-            url_for("cadastrar_transacao"))
+    db.session.add(nova_transacao);
+    db.session.commit();
+    flash("Transação cadastrada!", "success");
+    return redirect(url_for("listar_transacoes"))
 
 
 @app.route("/editar/<int:id>", methods=["GET", "POST"])
@@ -452,11 +474,26 @@ def editar_transacao(id):
 def apagar_transacao(id):
     transacao_db = buscar_transacao(id, session['id_usuario'])
     if transacao_db:
-        db.session.delete(transacao_db); db.session.commit(); flash("Transação excluída.", "success")
+        db.session.delete(transacao_db);
+        db.session.commit();
+        flash("Transação excluída.", "success")
     else:
         flash("Transação não encontrada.", "error")
     return redirect(url_for("listar_transacoes"))
 
+@app.route("/apagar_todas", methods=["POST"])
+@login_required
+def apagar_todas_transacoes():
+    usuario_id = session['id_usuario']
+    try:
+        Transacao.query.filter_by(id_usuario=usuario_id).delete()
+        db.session.commit()
+        flash("Todas as suas transações foram excluídas com sucesso!", "success")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Erro ao apagar todas as transações: {e}")
+        flash("Ocorreu um erro ao tentar excluir as transações.", "danger")
+    return redirect(url_for('listar_transacoes'))
 
 @app.route("/meta", methods=["GET", "POST"])
 @login_required
@@ -484,3 +521,4 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
