@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %} Cadastro de Transação | Pay Attention {% endblock %}
+
+{% block head_extra %}
+    <style>
+        :root {
+            --cor-principal: #2b5735;
+            --cor-fundo-card: #ffffff;
+            --cor-sombra: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .form-card {
+            background-color: var(--cor-fundo-card);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: var(--cor-sombra);
+            border: 1px solid #e9eef0;
+        }
+
+        .form-card h3 {
+            color: var(--cor-principal);
+            font-weight: 600;
+            border-bottom: 2px solid #e9f0f0;
+            padding-bottom: 10px;
+            margin-bottom: 20px !important;
+        }
+
+        .btn-primary-custom {
+            background-color: var(--cor-principal);
+            border-color: var(--cor-principal);
+            font-weight: 600;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .btn-primary-custom:hover {
+            background-color: #11605e;
+            border-color: #11605e;
+        }
+
+        .form-control:focus {
+            border-color: #79c9c8;
+            box-shadow: 0 0 0 0.25rem rgba(22, 121, 119, 0.25);
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="form-card">
+            <h3 class="mb-4">Cadastro de Nova Transação</h3>
+
+            <form method="POST">
+
+                <div class="mb-3">
+                    <label class="form-label" for="descricao">Descrição</label>
+                    <input class="form-control" id="descricao" name="descricao" required type="text" placeholder="Ex: Salário, Aluguel, Compra no mercado">
+                </div>
+
+                <div class="row">
+                    <div class="mb-3 col-md-6">
+                        <label class="form-label" for="valor">Valor (R$)</label>
+                        <input class="form-control" id="valor" name="valor" required step="0.01" type="number" placeholder="0.00">
+                    </div>
+
+                    <div class="mb-3 col-md-6">
+                        <label class="form-label" for="beneficiario">Beneficiário</label>
+                        <input class="form-control" id="beneficiario" name="beneficiario" type="text" placeholder="Beneficiário">
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="mb-4">
+                        <label class="form-label" for="type">Tipo de Transação</label>
+                        <select class="form-select" id="type" name="type" required>
+                            <option value="" disabled selected>Selecione o tipo</option>
+                            <option value="receita" style="color: var(--cor-sucesso);">💰 Receita</option>
+                            <option value="despesa" style="color: var(--cor-perigo);">💸 Despesa</option>
+                        </select>
+                    </div>
+                </div>
+
+                            <div class="mb-3">
+                <label class="form-label" for="categoria">Categoria</label>
+                <select class="form-select" id="categoria" name="categoria">
+                    <option value="Outros" selected>Outros</option>
+                    <option value="Moradia">Moradia</option>
+                    <option value="Alimentação">Alimentação</option>
+                    <option value="Transporte">Transporte</option>
+                    <option value="Lazer">Lazer</option>
+                    <option value="Saúde">Saúde</option>
+                    <option value="Investimento">📈 Investimento</option>
+                </select>
+            </div>
+
+                <button class="btn btn-primary-custom w-100" type="submit">
+                    <i class="bi bi-check-circle-fill"></i> Cadastrar Transação
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

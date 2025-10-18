@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Definir Meta de Investimento{% endblock %}
+
+{% block head_extra %}
+    <style>
+        .form-card {
+            background-color: #fff;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #e9eef0;
+        }
+        .btn-primary-custom {
+            background-color: var(--cor-principal);
+            border-color: var(--cor-principal);
+            font-weight: 600;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="form-card">
+            <h3 class="mb-4">Meta de Investimento Mensal</h3>
+            <p class="text-muted">Defina quanto você planeja investir este mês. Este valor será usado para acompanhar seu progresso no dashboard.</p>
+
+            <form method="POST">
+                <div class="mb-3">
+                    <label for="meta" class="form-label">Valor da Meta (R$)</label>
+                    <input type="number" step="0.01" class="form-control" id="meta" name="meta"
+                           value="{{ "%.2f" | format(meta_atual) }}"
+                           placeholder="Ex: 1000.00" required>
+                </div>
+                <button type="submit" class="btn btn-primary-custom w-100">
+                    <i class="bi bi-check-circle-fill"></i> Salvar Meta
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

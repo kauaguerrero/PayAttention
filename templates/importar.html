@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %} Importar Extrato CSV | Pay Attention {% endblock %}
+
+{% block head_extra %}
+    <style>
+        :root {
+            --cor-principal: #2b5735;
+            --cor-fundo-card: #ffffff;
+            --cor-sombra: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .form-card {
+            background-color: var(--cor-fundo-card);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: var(--cor-sombra);
+            border: 1px solid #e9eef0;
+        }
+
+        .form-card h3 {
+            color: var(--cor-principal);
+            font-weight: 600;
+            border-bottom: 2px solid #e9f0f0;
+            padding-bottom: 10px;
+            margin-bottom: 20px !important;
+        }
+
+        .btn-primary-custom {
+            background-color: var(--cor-principal);
+            border-color: var(--cor-principal);
+            font-weight: 600;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .btn-primary-custom:hover {
+            background-color: #11605e;
+            border-color: #11605e;
+        }
+
+        .form-control:focus {
+            border-color: #79c9c8;
+            box-shadow: 0 0 0 0.25rem rgba(22, 121, 119, 0.25);
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="form-card">
+            <h3 class="mb-4">Importar Extrato Bancário (.csv)</h3>
+            <p class="text-muted small">Selecione o arquivo CSV do seu extrato para adicionar múltiplas transações de uma só vez.</p>
+
+            <form method="POST" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="arquivo_csv" class="form-label">Arquivo CSV</label>
+                    <input class="form-control" type="file" id="arquivo_csv" name="arquivo_csv" accept=".csv" required>
+                </div>
+
+                <button class="btn btn-primary-custom w-100 mt-3" type="submit">
+                    <i class="bi bi-upload"></i> Enviar e Processar
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

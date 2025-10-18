@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %} Criação de Conta - Pay Attention {% endblock %}
+
+{% block content %}
+    <style>
+        :root {
+            --cor-principal: #2b5735;
+            --cor-secundaria-verde: #40a09e;
+            --cor-perigo: #d9534f;
+            --background-card: #FFFFFF;
+            --border-color: #CED4DA;
+            --text-color-dark: #343A40;
+            --text-color-light: #FFFFFF;
+        }
+
+        html, body {
+            height: 100%;
+            padding: 0;
+            margin: 0;
+            overflow: hidden;
+        }
+        nav.navbar { display: none; }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(to right, var(--cor-principal), var(--cor-secundaria-verde));
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: var(--text-color-dark);
+        }
+
+        .container {
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        body > div {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100vh;
+            padding: 0;
+            margin: 0;
+        }
+
+        .container-form {
+            background-color: var(--background-card);
+            padding: 50px 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 420px;
+            text-align: left;
+            border: 1px solid #e9eef0;
+            margin: auto;
+            flex-shrink: 0;
+        }
+
+        .container-form h1 { color: var(--cor-principal); margin-bottom: 35px; font-size: 2.0em; font-weight: 600; text-align: left; }
+        .input-group { margin-bottom: 30px; text-align: left; position: relative; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: var(--text-color-dark); }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="email"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1em;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="email"]:focus {
+            outline: none;
+            border-color: var(--cor-principal);
+            box-shadow: 0 0 0 3px rgba(22, 121, 119, 0.2);
+        }
+
+        button[type="submit"] {
+            width: 100%;
+            padding: 14px;
+            background-color: var(--cor-principal);
+            color: var(--text-color-light);
+            border: none;
+            border-radius: 8px;
+            font-size: 1.0em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            margin-top: 25px;
+            box-shadow: 0 4px 15px rgba(22, 121, 119, 0.3);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        button[type="submit"]:hover { background-color: #11605e; transform: translateY(-1px); }
+
+        .link-login { margin-top: 25px; font-size: 0.9em; color: #6C757D; text-align: center; }
+        .link-login a { color: var(--cor-principal); font-weight: 600; text-decoration: none; transition: color 0.3s ease; }
+        .link-login a:hover { color: #11605e; text-decoration: underline; }
+
+        .error-message {
+            color: var(--cor-perigo);
+            font-size: 0.8em;
+            margin-top: 5px;
+            display: none;
+            position: absolute;
+            bottom: -25px;
+            left: 0;
+            width: 100%;
+            text-align: left;
+        }
+    </style>
+
+    <div class="container-form" id="form-container">
+        <h1><i class="bi bi-person-circle"></i> Crie Sua Conta</h1>
+
+        <form id="cadastroForm" method="POST" action="{{ url_for('cadastrar_usuario') }}">
+            <div class="input-group">
+                <label for="nome">Nome Completo</label>
+                <input type="text" id="nome" name="nome" placeholder="Seu nome completo" required value="{{ request.form.nome if request.form.nome else '' }}">
+            </div>
+            <div class="input-group">
+                <label for="email">E-mail</label>
+                <input type="email" id="email" name="email" placeholder="exemplo@email.com" required value="{{ request.form.email if request.form.email else '' }}">
+            </div>
+            <div class="input-group">
+                <label for="senha">Criar Senha</label>
+                <input type="password" id="senha" name="senha" placeholder="Mínimo 7 caracteres" required>
+                <span id="senha-erro" class="error-message">A senha deve ter pelo menos 7 caracteres.</span>
+            </div>
+            <button type="submit">
+                <i class="bi bi-person-fill-add"></i> Cadastrar Agora
+            </button>
+        </form>
+
+        <p class="link-login">
+            Já tem conta? <a href="{{ url_for('fazer_login') }}">Faça login aqui</a>
+        </p>
+
+    </div>
+
+{% endblock %}
+
+{% block scripts_extra %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('cadastroForm');
+            const senhaInput = document.getElementById('senha');
+            const senhaErro = document.getElementById('senha-erro');
+
+            form.addEventListener('submit', function(event) {
+                const senha = senhaInput.value;
+
+                if (senha.length < 7) {
+                    event.preventDefault();
+                    senhaErro.style.display = 'block';
+                    senhaInput.style.borderColor = 'var(--cor-perigo)';
+                    senhaInput.parentElement.classList.add('error');
+                } else {
+                    senhaErro.style.display = 'none';
+                    senhaInput.style.borderColor = 'var(--border-color)';
+                    senhaInput.parentElement.classList.remove('error');
+                }
+            });
+
+             senhaInput.addEventListener('input', function() {
+                senhaErro.style.display = 'none';
+                senhaInput.style.borderColor = 'var(--border-color)';
+                senhaInput.parentElement.classList.remove('error');
+            });
+        });
+    </script>
+{% endblock %}

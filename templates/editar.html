@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %} Editar Transação | Pay Attention {% endblock %}
+
+{% block head_extra %}
+    <style>
+        :root {
+            --cor-principal: #167977;
+            --cor-sucesso: #28a745;
+            --cor-perigo: #d9534f;
+            --cor-fundo-card: #ffffff;
+            --cor-sombra: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .form-card {
+            background-color: var(--cor-fundo-card);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: var(--cor-sombra);
+            border: 1px solid #e9eef0;
+        }
+
+        .form-card h3 {
+            color: var(--cor-principal);
+            font-weight: 600;
+            border-bottom: 2px solid #e9f0f0;
+            padding-bottom: 10px;
+            margin-bottom: 20px !important;
+        }
+
+        .btn-primary-custom {
+            background-color: var(--cor-principal);
+            border-color: var(--cor-principal);
+            font-weight: 600;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .btn-primary-custom:hover {
+            background-color: #11605e;
+            border-color: #11605e;
+        }
+
+        .form-control:focus {
+            border-color: #79c9c8;
+            box-shadow: 0 0 0 0.25rem rgba(22, 121, 119, 0.25);
+        }
+
+        .form-control:disabled {
+            background-color: #f3f5f5;
+            color: #6c757d;
+            border-style: dashed;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="form-card">
+            <h3 class="mb-4">Editar Transação</h3>
+
+            <form method="POST">
+
+                <div class="row">
+                    <div class="mb-3 col-md-4">
+                        <label class="form-label" for="id">ID</label>
+                        <input class="form-control" id="id" name="id" type="text"
+                               value="{{ transacao['id'] }}" disabled>
+                    </div>
+
+                    <div class="mb-3 col-md-8">
+                        <label class="form-label" for="descricao">Descrição</label>
+                        <input class="form-control" id="descricao" name="descricao" required type="text"
+                               value="{{ transacao['descricao'] }}">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="valor">Valor (R$)</label>
+                    <input class="form-control" id="valor" name="valor" required step="0.01" type="number"
+                           value="{{ "%.2f" | format(transacao['valor']) }}">
+                </div>
+
+                <div class="row">
+                    <div class="mb-3 col-md-6">
+                        <label class="form-label" for="type">Tipo</label>
+                        <select class="form-select" id="type" name="type" required>
+                            <option value="receita" {% if transacao['type'] == 'receita' %} selected {% endif %} style="color: var(--cor-sucesso);">💰 Receita</option>
+                            <option value="despesa" {% if transacao['type'] == 'despesa' %} selected {% endif %} style="color: var(--cor-perigo);">💸 Despesa</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3 col-md-6">
+                        <label class="form-label" for="beneficiario">Beneficiário/Origem</label>
+                        <input class="form-control" id="beneficiario" name="beneficiario" type="text"
+                               value="{{ transacao['beneficiario'] }}">
+                    </div>
+                </div>
+
+                <button class="btn btn-primary-custom w-100 mt-3" type="submit">
+                    <i class="bi bi-arrow-repeat"></i> Atualizar Transação
+                </button>
+
+                <div class="mb-3">
+                    <label class="form-label" for="categoria">Categoria</label>
+                    <select class="form-select" id="categoria" name="categoria">
+                        {% set categorias = ['Outros', 'Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Saúde', 'Investimento'] %}
+                        {% for cat in categorias %}
+                            <option value="{{ cat }}" {% if transacao.categoria == cat %}selected{% endif %}>
+                                {{ '📈 ' if cat == 'Investimento' else '' }}{{ cat }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button class="btn btn-primary w-100" type="submit">
+                    <i class="bi bi-check-circle-fill"></i> Salvar Alterações
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

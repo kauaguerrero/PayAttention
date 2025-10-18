@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %} Login - Pay Attention {% endblock %}
+
+{% block content %}
+    <style>
+        :root {
+            --cor-principal: #2b5735;
+            --cor-secundaria-verde: #40a09e;
+            --cor-perigo: #d9534f;
+            --background-card: #FFFFFF;
+            --border-color: #CED4DA;
+            --text-color-dark: #343A40;
+        }
+
+        html, body {
+            height: 100%;
+            padding: 0;
+            margin: 0;
+            overflow: hidden;
+        }
+        nav.navbar { display: none; }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(to right, var(--cor-principal), var(--cor-secundaria-verde));
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: var(--text-color-dark);
+        }
+
+        .container {
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        body > div {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100vh;
+            padding: 0;
+            margin: 0;
+        }
+
+        .container-form {
+            background-color: var(--background-card);
+            padding: 50px 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 420px;
+            text-align: left;
+            border: 1px solid #e9eef0;
+            margin: auto;
+            flex-shrink: 0;
+        }
+
+        .container-form h1 { color: var(--cor-principal); margin-bottom: 35px; font-size: 2.0em; font-weight: 600; text-align: left; }
+        .input-group { margin-bottom: 30px; text-align: left; position: relative; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: var(--text-color-dark); }
+        input[type="password"], input[type="email"] { width: 100%; padding: 12px 15px; border: 1px solid var(--border-color); border-radius: 8px; box-sizing: border-box; font-size: 1em; transition: border-color 0.3s ease, box-shadow 0.3s ease; }
+        input[type="password"]:focus, input[type="email"]:focus { outline: none; border-color: var(--cor-principal); box-shadow: 0 0 0 3px rgba(22, 121, 119, 0.2); }
+        button[type="submit"] { width: 100%; padding: 14px; background-color: var(--cor-principal); color: var(--text-color-light); border: none; border-radius: 8px; font-size: 1.0em; font-weight: 600; cursor: pointer; transition: background-color 0.3s ease, transform 0.2s ease; margin-top: 25px; box-shadow: 0 4px 15px rgba(22, 121, 119, 0.3); display: flex; justify-content: center; align-items: center; }
+        button[type="submit"]:hover { background-color: #11605e; transform: translateY(-1px); }
+        .link-cadastro { margin-top: 25px; font-size: 0.9em; color: #6C757D; text-align: center; }
+        .link-cadastro a { color: var(--cor-principal); font-weight: 600; text-decoration: none; transition: color 0.3s ease; }
+        .link-cadastro a:hover { color: #11605e; text-decoration: underline; }
+    </style>
+
+    <div class="container-form" id="form-container">
+        <h1><i class="bi bi-wallet2"></i> Bem-vindo de Volta</h1>
+
+        <form id="loginForm" method="POST" action="{{ url_for('fazer_login') }}">
+            <div class="input-group">
+                <label for="email">E-mail</label>
+                <input type="email" id="email" name="email" placeholder="Seu e-mail cadastrado" required value="{{ request.form.email if request.form.email else '' }}">
+            </div>
+            <div class="input-group">
+                <label for="senha">Senha</label>
+                <input type="password" id="senha" name="senha" placeholder="Sua senha" required>
+            </div>
+            <button type="submit">
+                <i class="bi bi-box-arrow-in-right"></i> Entrar
+            </button>
+        </form>
+
+        <p class="link-cadastro">
+            Não tem conta? <a href="{{ url_for('cadastrar_usuario') }}">Crie sua conta aqui</a>
+        </p>
+    </div>
+
+{% endblock %}

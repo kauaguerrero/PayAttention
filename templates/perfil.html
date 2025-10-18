@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %} Gerenciar Perfil | Pay Attention {% endblock %}
+
+{% block head_extra %}
+    <style>
+        :root {
+            --cor-principal: #2b5735;
+            --cor-sucesso: #28a745;
+            --cor-perigo: #d9534f;
+            --cor-fundo-card: #ffffff;
+            --cor-sombra: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .form-card {
+            background-color: var(--cor-fundo-card);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: var(--cor-sombra);
+            border: 1px solid #e9eef0;
+        }
+
+        .form-card h3 {
+            color: var(--cor-principal);
+            font-weight: 600;
+            border-bottom: 2px solid #e9f0f0;
+            padding-bottom: 10px;
+            margin-bottom: 20px !important;
+        }
+
+        .btn-primary-custom {
+            background-color: var(--cor-principal);
+            border-color: var(--cor-principal);
+            font-weight: 600;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .btn-primary-custom:hover {
+            background-color: #11605e;
+            border-color: #11605e;
+        }
+
+        .form-control:focus {
+            border-color: #79c9c8;
+            box-shadow: 0 0 0 0.25rem rgba(22, 121, 119, 0.25);
+        }
+
+        .password-section .form-control {
+            border-left: 3px solid #ffc107;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            {% set alert_class = 'alert-danger' if category == 'error' else 'alert-success' %}
+            {% if category == 'info' %}{% set alert_class = 'alert-info' %}{% endif %}
+            <div class="alert {{ alert_class }} mb-3" role="alert">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+        <div class="form-card">
+            <h3 class="mb-4">Gerenciar Minha Conta</h3>
+
+            <form method="POST">
+
+                <div class="mb-3">
+                    <label class="form-label" for="nome">Nome Completo</label>
+                    <input class="form-control" id="nome" name="nome" required type="text"
+                           value="{{ usuario.nome }}">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="email">E-mail</label>
+                    <input class="form-control" id="email" name="email" required type="email"
+                           value="{{ usuario.email }}">
+                </div>
+
+                <hr class="my-4">
+
+                <h5 class="mb-3" style="color: var(--cor-principal);">Alterar Senha</h5>
+                <p class="text-muted small">Preencha os campos abaixo somente se desejar definir uma Nova Senha.</p>
+                
+                <div class="mb-3 password-section">
+                    <label class="form-label" for="nova_senha">Nova Senha (mín. 7 caracteres)</label>
+                    <input class="form-control" id="nova_senha" name="nova_senha" type="password" 
+                           placeholder="Deixe em branco para manter a senha atual">
+                </div>
+                
+                <hr class="my-4">
+                
+                <h5 class="mb-3" style="color: var(--cor-perigo);">Confirmação de Segurança</h5>
+                <p class="text-muted small">⚠️ A Senha Atual é obrigatória para salvar qualquer alteração (Nome, E-mail ou Senha).</p>
+
+                <div class="mb-3 password-section">
+                    <label class="form-label" for="senha_atual">Senha Atual (Obrigatório)</label>
+                    <input class="form-control" id="senha_atual" name="senha_atual" required type="password">
+                </div>
+
+                <button class="btn btn-primary-custom w-100 mt-4" type="submit">
+                    <i class="bi bi-save"></i> Salvar Alterações
+                </button>
+                <a href="{{ url_for('listar_transacoes') }}" class="btn btn-secondary w-100 mt-2">
+                    <i class="bi bi-x-circle"></i> Cancelar
+                </a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

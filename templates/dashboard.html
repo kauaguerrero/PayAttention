@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Financeiro{% endblock %}
+
+{% block head_extra %}
+    <style>
+        :root {
+            --cor-principal: #2b5735;
+            --cor-sucesso: #28a745;
+            --cor-perigo: #d9534f;
+            --cor-texto-claro: #1c1c1c;
+            --cor-fundo-claro: #f8f9fa;
+        }
+        body { background-color: var(--cor-fundo-claro); color: var(--cor-texto-claro); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .border-bottom { border-bottom-color: #e3e8e8 !important; }
+        .h2, .h1 { color: var(--cor-texto-claro); }
+        .saldo-total { font-size: 1.8rem; font-weight: 700; color: var(--cor-principal); background-color: #e9f0f0; padding: 5px 10px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
+        .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: #f3f5f5; }
+        .table-hover tbody tr:hover { --bs-table-accent-bg: #e5eded; }
+        .badge.text-bg-success { background-color: var(--cor-sucesso) !important; color: white !important; font-weight: 500; }
+        .badge.text-bg-danger { background-color: var(--cor-perigo) !important; color: white !important; font-weight: 500; }
+        .text-success { color: var(--cor-sucesso) !important; }
+        .text-danger { color: var(--cor-perigo) !important; }
+        .grafico-container { max-width: 450px; height: 350px; margin: 0 auto; } /* Ajuste de altura */
+        .btn-outline-secondary { --bs-btn-color: var(--cor-principal); --bs-btn-border-color: var(--cor-principal); --bs-btn-hover-color: #fff; --bs-btn-hover-bg: var(--cor-principal); --bs-btn-hover-border-color: var(--cor-principal); --bs-btn-active-bg: #11605e; --bs-btn-active-border-color: #11605e; }
+        .btn-outline-danger { --bs-btn-color: var(--cor-perigo); --bs-btn-border-color: var(--cor-perigo); --bs-btn-hover-color: #fff; --bs-btn-hover-bg: var(--cor-perigo); --bs-btn-hover-border-color: var(--cor-perigo); --bs-btn-active-bg: #c9302c; --bs-btn-active-border-color: #c9302c; }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div>
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">Balanço Geral</h1>
+        <a href="{{ url_for('gerenciar_meta') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-bullseye"></i> Definir Meta Mensal
+    </a>
+    </div>
+
+    <p class="mb-5">Saldo Atual: <span class="saldo-total">R$ {{ "%.2f" | format(saldo) }}</span></p>
+
+    <div class="row text-center">
+        <div class="col-md-6 mb-4">
+            <div class="grafico-container">
+                <canvas id="myPizzaChart"></canvas>
+            </div>
+        </div>
+        <div class="col-md-6 mb-4">
+            <div class="grafico-container">
+                <canvas id="metaChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+
+    <h2 class="mt-5">Lista de Transações</h2>
+    <div class="table-responsive small">
+        <table class="table table-striped table-hover table-sm">
+            <thead>
+                <tr>
+                    <th scope="col">Data</th>
+                    <th scope="col">Tipo</th>
+                    <th scope="col">Categoria</th>
+                    <th scope="col" class="text-end">Valor (R$)</th>
+                    <th scope="col">Descrição</th>
+                    <th scope="col">Beneficiário</th>
+                    <th scope="col">Ações</th>
+                </tr>
+            </thead>
+        <tbody>
+            {% for transacao in transacoes %}
+                <tr>
+                    <td>{{ transacao.data[:10] }}</td>
+                    <td>
+                        {% if transacao.tipo == 'receita' %}
+                            <span class="badge text-bg-success">Receita</span>
+                        {% else %}
+                            <span class="badge text-bg-danger">Despesa</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="badge bg-secondary">{{ transacao.categoria | default('Outros') }}</span></td>
+                    <td class="fw-bold text-end text-{{ 'success' if transacao.tipo == 'receita' else 'danger' }}">
+                        {{ "%.2f" | format(transacao.valor) }}
+                    </td>
+                    <td>{{ transacao.descricao }}</td>
+                    <td>{{ transacao.beneficiario }}</td>
+                    <td>
+                        <a href="{{ url_for('editar_transacao', id=transacao.id) }}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <form method="POST" action="{{ url_for('apagar_transacao', id=transacao.id) }}" style="display:inline;">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Tem certeza?');">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="7" class="text-center p-4">Nenhuma transação encontrada.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const contextoGraficoPizza = document.getElementById('myPizzaChart');
+            if (contextoGraficoPizza) {
+                const ENTRADA_TOTAL = {{ entrada_total | default(0) | tojson }};
+                const SAIDA_TOTAL = {{ saida_total | default(0) | tojson }};
+                new Chart(contextoGraficoPizza, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Receitas (R$)', 'Despesas (R$)'],
+                        datasets: [{
+                            label: 'Balanço Financeiro',
+                            data: [ENTRADA_TOTAL, SAIDA_TOTAL],
+                            backgroundColor: ['#28a745', '#d9534f'],
+                            hoverOffset: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '70%',
+                        plugins: {
+                            legend: { position: 'bottom', labels: { padding: 20 } },
+                            title: { display: true, text: 'Balanço de Receitas e Despesas' }
+                        }
+                    }
+                });
+            }
+
+            const contextoMetaChart = document.getElementById('metaChart');
+            if (contextoMetaChart) {
+                // Pega os dados enviados pelo Flask
+                const META_INVESTIMENTO = {{ meta_investimento | default(0) | tojson }};
+                const TOTAL_INVESTIDO = {{ total_investido | default(0) | tojson }};
+
+                // Garante que o valor restante não seja negativo para o gráfico
+                const restanteParaMeta = Math.max(0, META_INVESTIMENTO - TOTAL_INVESTIDO);
+
+                // Calcula a porcentagem atingida para exibir no título
+                const porcentagemAtingida = META_INVESTIMENTO > 0 ? (TOTAL_INVESTIDO / META_INVESTIMENTO * 100).toFixed(1) : 0;
+
+                new Chart(contextoMetaChart, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Atingido (R$)', 'Faltando (R$)'],
+                        datasets: [{
+                            label: 'Meta de Investimento',
+                            data: [TOTAL_INVESTIDO, restanteParaMeta],
+                            backgroundColor: ['#0d6efd', '#e9ecef'], // Azul para o atingido, cinza para o restante
+                            hoverOffset: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '70%',
+                        plugins: {
+                            legend: { position: 'bottom', labels: { padding: 20 } },
+                            title: {
+                                display: true,
+                                text: `Meta de Investimento: ${porcentagemAtingida}% Atingido` // Título dinâmico
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+{% endblock %}
