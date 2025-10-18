@@ -26,7 +26,6 @@
     <h1 class="h4" style="color:#055160">Saldo Atual <i class="bi bi-cash-stack" style="color:#54Ab68"></i></h1>
     <p class="mb-5"><span class="saldo-total" style="color:#055160">R$ {{ saldo | format_brl }}</span></p>
 
-    <!-- Linha para os Gráficos -->
     <div class="row text-center mb-5">
         <div class="col-lg-4 mb-4">
             <div class="card h-100"><div class="card-body grafico-container"><canvas id="myPizzaChart"></canvas></div></div>
@@ -38,12 +37,89 @@
             <div class="card h-100"><div class="card-body grafico-container"><canvas id="gastosCategoriaChart"></canvas></div></div>
         </div>
     </div>
+    <div class="d-flex justify-content-between align-items-center mt-5 mb-3">
+        <h2 class="mb-0">Gastos Programados do Mês</h2>
+        <a href="{{ url_for('adicionar_gasto_programado') }}" class="btn btn-success btn-sm">
+            <i class="bi bi-plus-circle"></i> Adicionar Gasto
+        </a>
+    </div>
 
-        <div class="d-flex justify-content-between align-items-center mt-5 mb-2">
+    <div class="row">
+        {% for gasto in gastos_programados %}
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <h5 class="card-title">{{ gasto.descricao }}</h5>
+                        <span class="fw-bold fs-5 text-danger">R$ {{ gasto.valor_parcela | format_brl }}</span>
+                    </div>
+
+                    {% if not gasto.recorrente %}
+                    <p class="card-text mb-2 text-muted">
+                        Progresso: {{ gasto.parcelas_pagas }} de {{ gasto.total_parcelas }} parcelas pagas.
+                    </p>
+                    <div class="progress mb-3" style="height: 10px;">
+                        <div class="progress-bar bg-success" role="progressbar"
+                             style="width: {{ (gasto.parcelas_pagas / gasto.total_parcelas) * 100 }}%;"
+                             aria-valuenow="{{ gasto.parcelas_pagas }}"
+                             aria-valuemin="0"
+                             aria-valuemax="{{ gasto.total_parcelas }}"></div>
+                    </div>
+                    {% else %}
+                    <p class="card-text mb-2 text-muted">Pagamento recorrente mensal.</p>
+                    {% endif %}
+
+                    <div class="d-flex justify-content-end">
+                         <form method="POST" action="{{ url_for('pagar_parcela_gasto', id=gasto.id_gasto) }}" class="me-2">
+                            <button type="submit" class="btn btn-sm btn-outline-success">
+                                <i class="bi bi-check-circle"></i> Marcar como Pago
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ url_for('apagar_gasto_programado', id=gasto.id_gasto) }}" onsubmit="return confirm('Tem certeza que deseja apagar este gasto programado?');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <div class="alert alert-info text-center">Nenhum gasto programado para este mês.</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="mt-4">
+        <h4 class="text-center">Impacto no Saldo Mensal</h4>
+        <p class="text-center text-muted">Total Programado: <span class="text-danger fw-bold">R$ {{ total_gastos_programados_mes | format_brl }}</span></p>
+
+        {% if total_gastos_programados_mes > saldo %}
+            <div class="progress-stacked">
+                <div class="progress" role="progressbar" style="width: 100%; height: 25px;">
+                    <div class="progress-bar bg-danger" style="width: 100%;">SALDO INSUFICIENTE</div>
+                </div>
+            </div>
+            <p class="text-center mt-2 fw-bold">
+                Faltará: <span style="color: #6c757d;">R$ {{ (total_gastos_programados_mes - saldo) | format_brl }}</span>
+            </p>
+        {% else %}
+            <div class="progress" style="height: 25px;">
+                <div class="progress-bar bg-danger" role="progressbar" style="width: {{ percentual_gastos }}%;" aria-valuenow="{{ percentual_gastos }}" aria-valuemin="0" aria-valuemax="100">
+                    Gastará: R$ {{ total_gastos_programados_mes | format_brl }}
+                </div>
+                <div class="progress-bar bg-success" role="progressbar" style="width: {{ percentual_sobra }}%;" aria-valuenow="{{ percentual_sobra }}" aria-valuemin="0" aria-valuemax="100">
+                    Restará: R$ {{ saldo_apos_gastos | format_brl }}
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mt-5 mb-2">
         <h2 class="mb-0">Lista de Transações</h2>
         <form action="{{ url_for('apagar_todas_transacoes') }}" method="POST"
               onsubmit="return confirm('Você tem certeza que deseja apagar TODAS as suas transações? Esta ação não pode ser desfeita.');">
-
             <button type="submit" class="btn btn-danger btn-sm">
                 <i class="bi bi-trash"></i> Apagar Todas
             </button>
@@ -193,4 +269,3 @@
         });
     </script>
 {% endblock %}
-

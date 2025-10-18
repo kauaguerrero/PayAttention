@@ -66,3 +66,36 @@ class Meta(db.Model):
 
     def __repr__(self):
         return f"<Meta {self.id_usuario} - {self.mes}/{self.ano}: R${self.valor}>"
+
+class GastoProgramado(db.Model):
+    __tablename__ = 'gastos_programados'
+    id_gasto = db.Column(db.Integer, primary_key=True)
+    descricao = db.Column(db.String(150), nullable=False)
+    valor_parcela = db.Column(db.Numeric(10, 2), nullable=False)
+
+    # Define se é uma despesa contínua (ex: Netflix) ou parcelada (ex: Compra em 10x)
+    recorrente = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Para gastos parcelados
+    total_parcelas = db.Column(db.Integer, nullable=True)
+    parcelas_pagas = db.Column(db.Integer, default=0, nullable=False)
+
+    # Data de início da cobrança
+    data_inicio = db.Column(db.DateTime, default=datetime.now, nullable=False)
+
+    id_usuario = db.Column(db.Integer, db.ForeignKey('usuarios.id_usuario'), nullable=False)
+    usuario = db.relationship('Usuario', backref='gastos_programados')
+
+    def to_dict(self):
+        return {
+            'id': self.id_gasto,
+            'descricao': self.descricao,
+            'valor_parcela': float(self.valor_parcela),
+            'recorrente': self.recorrente,
+            'total_parcelas': self.total_parcelas,
+            'parcelas_pagas': self.parcelas_pagas,
+            'data_inicio': self.data_inicio.isoformat()
+        }
+
+    def __repr__(self):
+        return f"<Gasto Programado {self.descricao} - R${self.valor_parcela}>"

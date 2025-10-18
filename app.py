@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from static.database.config import Config
-from static.database.models import db, Transacao, Usuario, hash_senha, verificar_senha, Meta
+from static.database.models import db, Transacao, Usuario, hash_senha, verificar_senha, Meta, GastoProgramado
 from sqlalchemy import func
 from functools import wraps
 from datetime import datetime
@@ -330,11 +330,10 @@ def listar_transacoes():
     usuario_id = session['id_usuario']
     hoje = datetime.now()
 
+    # Cálculo de saldo e outros dados (seu código existente)
     saldo, entrada_total, saida_total = calcular_saldo(usuario_id)
-
     meta_salva = Meta.query.filter_by(id_usuario=usuario_id, mes=hoje.month, ano=hoje.year).first()
     meta_investimento = meta_salva.valor if meta_salva else Decimal('0.00')
-
     total_investido_query = db.session.query(func.sum(Transacao.valor)).filter(Transacao.id_usuario == usuario_id,
                                                                                Transacao.tipo == 'despesa',
                                                                                Transacao.categoria.ilike(
@@ -344,7 +343,6 @@ def listar_transacoes():
                                                                                func.extract('year',
                                                                                             Transacao.data) == hoje.year).scalar()
     total_investido = total_investido_query or Decimal('0.00')
-
     dados_gastos_categoria = db.session.query(
         Transacao.categoria,
         func.sum(Transacao.valor).label('total_gasto')
@@ -354,30 +352,57 @@ def listar_transacoes():
         func.extract('month', Transacao.data) == hoje.month,
         func.extract('year', Transacao.data) == hoje.year
     ).group_by(Transacao.categoria).order_by(func.sum(Transacao.valor).desc()).all()
-
     categorias_labels = [item[0] for item in dados_gastos_categoria if item[0]]
     gastos_valores = [float(item[1]) for item in dados_gastos_categoria if item[0]]
-
     cores_categoria = {
         'Alimentação': '#FF6384', 'Transporte': '#36A2EB', 'Moradia': '#FFCE56',
         'Lazer': '#4BC0C0', 'Saúde': '#9966FF', 'Investimento': '#FF9F40',
         'Outros': '#C9CBCF', 'A Classificar': '#E7E9ED'
     }
-
     todas_transacoes = Transacao.query.filter_by(id_usuario=usuario_id).order_by(Transacao.data.desc()).all()
     transacoes_dict = [t.to_dict() for t in todas_transacoes]
+
+    # Lógica para Gastos Programados
+    gastos_programados_ativos = GastoProgramado.query.filter(
+        GastoProgramado.id_usuario == usuario_id,
+        (GastoProgramado.recorrente == True) | (GastoProgramado.parcelas_pagas < GastoProgramado.total_parcelas)
+    ).all()
+
+    total_gastos_programados_mes = sum(g.valor_parcela for g in gastos_programados_ativos)
+
+    # Mantenha como Decimal
+    saldo_apos_gastos = saldo - total_gastos_programados_mes
+
+    # Percentuais para o gráfico de barras (aqui float é aceitável)
+    if saldo > 0:
+        # A divisão resulta em Decimal, convertemos para float para o template
+        percentual_gastos = float(
+            (total_gastos_programados_mes / saldo) * 100) if total_gastos_programados_mes < saldo else 100
+        percentual_sobra = 100 - percentual_gastos if total_gastos_programados_mes < saldo else 0
+    else:
+        percentual_gastos = 100
+        percentual_sobra = 0
 
     return render_template(
         "dashboard.html",
         transacoes=transacoes_dict,
-        saldo=saldo,
-        entrada_total=float(entrada_total),
-        saida_total=float(saida_total),
-        meta_investimento=float(meta_investimento),
-        total_investido=float(total_investido),
+        saldo=saldo,  # Decimal
+        entrada_total=float(entrada_total),  # Usado em Chart.js, float é ok
+        saida_total=float(saida_total),  # Usado em Chart.js, float é ok
+        meta_investimento=float(meta_investimento),  # Usado em Chart.js, float é ok
+        total_investido=float(total_investido),  # Usado em Chart.js, float é ok
         categorias_labels=categorias_labels,
         gastos_valores=gastos_valores,
-        cores_categoria=cores_categoria
+        cores_categoria=cores_categoria,
+
+        # Enviando como Decimal para permitir cálculos no template
+        gastos_programados=gastos_programados_ativos,
+        total_gastos_programados_mes=total_gastos_programados_mes,  # MANTIDO COMO DECIMAL
+        saldo_apos_gastos=saldo_apos_gastos,  # MANTIDO COMO DECIMAL
+
+        # Enviando como float para usar em CSS (width: XX%)
+        percentual_gastos=percentual_gastos,
+        percentual_sobra=percentual_sobra
     )
 
 @app.route("/login", methods=["GET", "POST"])
@@ -528,8 +553,86 @@ def gerenciar_meta():
     return render_template("definir_meta.html", meta_atual=valor_meta_existente)
 
 
+@app.route("/gastos-programados/novo", methods=["GET", "POST"])
+@login_required
+def adicionar_gasto_programado():
+    if request.method == "POST":
+        descricao = request.form.get("descricao")
+        valor_parcela = Decimal(request.form.get("valor_parcela"))
+        tipo_gasto = request.form.get("tipo_gasto")  # 'recorrente' ou 'parcelado'
+
+        novo_gasto = GastoProgramado(
+            descricao=descricao,
+            valor_parcela=valor_parcela,
+            recorrente=(tipo_gasto == 'recorrente'),
+            id_usuario=session['id_usuario']
+        )
+
+        if tipo_gasto == 'parcelado':
+            novo_gasto.total_parcelas = int(request.form.get("total_parcelas"))
+
+        db.session.add(novo_gasto)
+        db.session.commit()
+        flash("Gasto programado adicionado com sucesso!", "success")
+        return redirect(url_for('listar_transacoes'))
+
+    return render_template("adicionar_gasto_programado.html")
+
+
+@app.route("/gastos-programados/pagar/<int:id>", methods=["POST"])
+@login_required
+def pagar_parcela_gasto(id):
+    gasto = GastoProgramado.query.filter_by(id_gasto=id, id_usuario=session['id_usuario']).first()
+
+    if not gasto:
+        flash("Gasto programado não encontrado.", "error")
+        return redirect(url_for('listar_transacoes'))
+
+    saldo_atual, _, _ = calcular_saldo(session['id_usuario'])
+    if gasto.valor_parcela > saldo_atual:
+        flash(f"Saldo insuficiente para pagar '{gasto.descricao}'.", "error")
+        return redirect(url_for('listar_transacoes'))
+
+    # 1. Cria a transação de despesa
+    nova_transacao = Transacao(
+        descricao=f"Pagamento: {gasto.descricao}" + (
+            f" ({gasto.parcelas_pagas + 1}/{gasto.total_parcelas})" if not gasto.recorrente else ""),
+        valor=gasto.valor_parcela,
+        tipo='despesa',
+        beneficiario=gasto.descricao,
+        categoria='Contas Programadas',  # Ou outra categoria que você queira
+        id_usuario=session['id_usuario']
+    )
+    db.session.add(nova_transacao)
+
+    # 2. Atualiza o contador de parcelas pagas
+    gasto.parcelas_pagas += 1
+
+    # Se todas as parcelas foram pagas, apaga o gasto programado
+    if not gasto.recorrente and gasto.parcelas_pagas >= gasto.total_parcelas:
+        db.session.delete(gasto)
+        flash(f"Última parcela de '{gasto.descricao}' paga. Gasto finalizado!", "info")
+    else:
+        flash(f"Parcela de '{gasto.descricao}' paga com sucesso!", "success")
+
+    db.session.commit()
+    return redirect(url_for('listar_transacoes'))
+
+
+@app.route("/gastos-programados/apagar/<int:id>", methods=["POST"])
+@login_required
+def apagar_gasto_programado(id):
+    gasto = GastoProgramado.query.filter_by(id_gasto=id, id_usuario=session['id_usuario']).first()
+    if gasto:
+        db.session.delete(gasto)
+        db.session.commit()
+        flash("Gasto programado excluído com sucesso.", "success")
+    else:
+        flash("Gasto não encontrado.", "error")
+    return redirect(url_for('listar_transacoes'))
+
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
-
