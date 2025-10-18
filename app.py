@@ -180,13 +180,10 @@ def processar_csv(arquivo, usuario_id):
             data_transacao = datetime.strptime(data_str, '%d/%m/%Y').date() if data_str else datetime.now().date()
 
             nova_transacao = Transacao(
-                descricao=row.get('Descrição', 'Não informado'),
-                valor=abs(valor_num),
+                descricao=row.get('Descrição', 'Não informado'), valor=abs(valor_num),
                 tipo='receita' if valor_num > 0 else 'despesa',
                 beneficiario=extrair_beneficiario(row.get('Descrição', '')),
-                id_usuario=usuario_id,
-                data=data_transacao,
-                categoria='A Classificar'  # Categoria padrão
+                id_usuario=usuario_id, data=data_transacao, categoria='A Classificar'
             )
             novas_transacoes.append(nova_transacao)
 
@@ -195,12 +192,11 @@ def processar_csv(arquivo, usuario_id):
             return redirect(url_for('importar_extrato'))
 
         db.session.add_all(novas_transacoes)
-        db.session.flush()  # Atribui IDs às novas transações antes do commit
-
+        db.session.flush()
         ids_para_categorizar = [t.id_transacao for t in novas_transacoes]
         session['transacoes_a_categorizar'] = ids_para_categorizar
-
         db.session.commit()
+
         flash(f'{len(novas_transacoes)} transações importadas! Por favor, categorize-as abaixo.', 'info')
         return redirect(url_for('categorizar_transacoes_importadas'))
 
@@ -209,6 +205,7 @@ def processar_csv(arquivo, usuario_id):
         flash(f'Ocorreu um erro ao processar o ficheiro CSV: {e}', 'danger')
         return redirect(url_for("importar_extrato"))
 
+
 def processar_pdf(arquivo, usuario_id):
     try:
         extrator = ExtratorPDF()
@@ -216,18 +213,19 @@ def processar_pdf(arquivo, usuario_id):
 
         if not transacoes_extraidas:
             flash('Nenhuma transação encontrada no PDF.', 'warning')
-            # CORREÇÃO: Apontar para o endpoint correto
             return redirect(url_for('importar_extrato'))
 
         saldo_atual, _, _ = calcular_saldo(usuario_id)
-        novas_transacoes = [];
+        novas_transacoes = []
         recusadas = 0
 
         for t in transacoes_extraidas:
-            valor = Decimal(str(t['valor']));
+            valor = Decimal(str(t['valor']))
             tipo = t['tipo']
             if tipo == 'despesa':
-                if valor > saldo_atual: recusadas += 1; continue
+                if valor > saldo_atual:
+                    recusadas += 1
+                    continue
                 saldo_atual -= valor
             else:
                 saldo_atual += valor
@@ -235,23 +233,36 @@ def processar_pdf(arquivo, usuario_id):
                 data_transacao = datetime.strptime(t['data'], '%Y-%m-%d').date()
             except:
                 data_transacao = datetime.now().date()
-            nova_transacao = Transacao(descricao=t['descricao'], valor=valor, tipo=tipo, beneficiario=t['beneficiario'],
-                                       id_usuario=usuario_id, data=data_transacao, categoria='Outros')
+
+            # MUDANÇA: Usar 'A Classificar' em vez de 'Outros'
+            nova_transacao = Transacao(
+                descricao=t['descricao'], valor=valor, tipo=tipo, beneficiario=t['beneficiario'],
+                id_usuario=usuario_id, data=data_transacao, categoria='A Classificar'
+            )
             novas_transacoes.append(nova_transacao)
 
-        if novas_transacoes:
-            db.session.add_all(novas_transacoes);
-            db.session.commit()
-            flash(f'{len(novas_transacoes)} transações importadas!', 'success')
+        if not novas_transacoes and recusadas == 0:
+            flash('Nenhuma transação válida foi encontrada no PDF.', 'warning')
+            return redirect(url_for('importar_extrato'))
+
+        # MUDANÇA: Adicionar a lógica correta de flush, session e commit
+        db.session.add_all(novas_transacoes)
+        db.session.flush()
+        ids_para_categorizar = [t.id_transacao for t in novas_transacoes]
+        session['transacoes_a_categorizar'] = ids_para_categorizar
+        db.session.commit()
+
+        flash(f'{len(novas_transacoes)} transações importadas! Por favor, categorize-as abaixo.', 'info')
+
         if recusadas > 0:
             flash(f'{recusadas} despesas ignoradas por saldo insuficiente.', 'warning')
-        return redirect(url_for('categorizar_importadas'))
+
+        return redirect(url_for('categorizar_transacoes_importadas'))
 
     except Exception as e:
-        db.session.rollback();
+        db.session.rollback()
         flash(f'Erro ao processar PDF: {str(e)}', 'danger')
         print(f"Erro no processamento de PDF: {e}")
-        # CORREÇÃO: Apontar para o endpoint correto
         return redirect(url_for('importar_extrato'))
 
 # --- ROTA UNIFICADA DE IMPORTAÇÃO ---
