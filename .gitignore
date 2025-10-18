@@ -1,7 +1,22 @@
+# Ambientes Virtuais (Pasta com todas as bibliotecas instaladas)
 .venv/
+venv/
+.venv1/
+
+# Arquivos de Cache do Python
 __pycache__/
+*.pyc
+
+# Arquivos de Configuração do PyCharm (específicos do seu computador)
 .idea/
+
+# Bancos de Dados Locais do SQLite
 *.db
 *.sqlite3
+
+# Pasta de Uploads Temporários (que criamos para os extratos)
+uploads/
+
+# Arquivos do Sistema Operacional (lixo gerado pelo Windows/macOS)
 .DS_Store
 Thumbs.db
