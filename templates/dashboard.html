@@ -51,8 +51,17 @@
         </div>
     </div>
 
+    <div class="d-flex justify-content-between align-items-center mt-5 mb-2">
+        <h2 class="mb-0">Lista de Transações</h2>
+        <form action="{{ url_for('apagar_todas_transacoes') }}" method="POST"
+              onsubmit="return confirm('Você tem certeza que deseja apagar TODAS as suas transações? Esta ação não pode ser desfeita.');">
 
-    <h2 class="mt-5">Lista de Transações</h2>
+            <button type="submit" class="btn btn-danger btn-sm">
+                <i class="bi bi-trash"></i> Apagar Todas
+            </button>
+        </form>
+    </div>
+
     <div class="table-responsive small">
         <table class="table table-striped table-hover table-sm">
             <thead>

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Importar Extrato | Pay Attention{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card p-4">
+            <h3 class="mb-4">Importar Extrato (CSV ou PDF)</h3>
+            <p class="text-muted small">
+                Selecione o ficheiro do seu extrato. O sistema irá detetar o formato e processar as transações automaticamente.
+            </p>
+
+            <!-- O formulário aponta para a rota unificada e o input tem o nome correto -->
+            <form method="POST" enctype="multipart/form-data" action="{{ url_for('importar_extrato') }}">
+                <div class="mb-3">
+                    <label for="arquivo_extrato" class="form-label">Ficheiro do Extrato (.csv, .pdf)</label>
+                    <input class="form-control" type="file" id="arquivo_extrato" name="arquivo_extrato" accept=".csv,.pdf" required>
+                </div>
+
+                <button class="btn-bd-processar" type="submit">
+                    <i class="bi bi-upload"></i> Enviar e Processar
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
