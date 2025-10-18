@@ -8,6 +8,8 @@ from decimal import Decimal
 import csv
 import io
 from datetime import datetime
+import re
+import pdfplumber
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -15,6 +17,7 @@ app.config.from_object(Config)
 app.secret_key = 'sua_chave_secreta_aqui'
 
 db.init_app(app)
+
 
 def extrair_beneficiario(descricao_completa):
     try:
@@ -32,6 +35,121 @@ def extrair_beneficiario(descricao_completa):
     except:
         return descricao_completa
 
+
+@app.route('/importarpdf', methods=['GET', 'POST'])
+def importar_pdf():
+    usuario_logado_id = session['id_usuario']
+
+    if request.method == 'POST':
+        if 'arquivo_pdf' not in request.files or not request.files['arquivo_pdf'].filename:
+            flash('Nenhum ficheiro selecionado!', 'danger')
+            return redirect(request.url)
+
+        arquivo = request.files['arquivo_pdf']
+        if not arquivo.filename.endswith('.pdf'):
+            flash('Formato de ficheiro inválido. Por favor, envie um ficheiro .pdf', 'warning')
+            return redirect(request.url)
+
+        try:
+            novas_transacoes = []
+            transacoes_recusadas = 0
+            saldo_atual, _, _ = calcular_saldo(usuario_logado_id)
+
+            # Dicionário para converter o nome do mês em número
+            meses_pt = {
+                'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'ABRIL': 4, 'MAIO': 5, 'JUNHO': 6,
+                'JULHO': 7, 'AGOSTO': 8, 'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
+            }
+
+            with pdfplumber.open(arquivo) as pdf:
+                texto_completo = "".join(pagina.extract_text() for pagina in pdf.pages)
+
+            # --- LÓGICA DE EXTRAÇÃO AVANÇADA PARA O EXTRATO NUBANK ---
+            current_date = None
+            current_type = None
+            descricao_buffer = []  # Buffer para acumular linhas de descrição
+
+            linhas = texto_completo.split('\n')
+
+            for linha in linhas:
+                linha = linha.strip()
+                if not linha: continue
+
+                # 1. Tenta identificar se a linha é uma DATA (ex: 01 OUTUBRO 2025)
+                match_data = re.match(r"(\d{2})\s+([A-ZÇ]+)\s+(\d{4})", linha)
+                if match_data:
+                    dia, mes_nome, ano = match_data.groups()
+                    mes_num = meses_pt.get(mes_nome, 1)  # Usa 1 como padrão se não encontrar
+                    current_date = datetime(int(ano), mes_num, int(dia)).date()
+                    continue
+
+                # 2. Tenta identificar se a linha define o TIPO da transação (saída ou entrada)
+                if "Total de saídas" in linha:
+                    current_type = 'despesa'
+                    continue
+                if "Total de entradas" in linha:
+                    current_type = 'receita'
+                    continue
+
+                # 3. Tenta identificar se a linha é um VALOR (ex: 60,00 ou -84,00)
+                # Esta regex procura por uma linha que contenha APENAS um número.
+                match_valor = re.match(r"^(-?[\d\.,]+)$", linha.replace("R$ ", ""))
+                if match_valor and descricao_buffer and current_date and current_type:
+                    valor_str = match_valor.group(1)
+
+                    # Junta as linhas de descrição que acumulámos
+                    descricao_completa = " - ".join(descricao_buffer)
+
+                    # Limpa e converte o valor
+                    valor_limpo = valor_str.replace('.', '').replace(',', '.')
+                    valor_final = abs(Decimal(valor_limpo))
+
+                    beneficiario = extrair_beneficiario(descricao_completa)
+
+                    # Validação de Saldo
+                    if current_type == "despesa":
+                        if valor_final > saldo_atual:
+                            transacoes_recusadas += 1;
+                            descricao_buffer.clear();
+                            continue
+                        saldo_atual -= valor_final
+                    else:
+                        saldo_atual += valor_final
+
+                    nova_transacao = Transacao(
+                        descricao=descricao_completa, valor=valor_final, tipo=current_type,
+                        beneficiario=beneficiario, id_usuario=usuario_logado_id, data=current_date,
+                        categoria='A Classificar'
+                    )
+                    novas_transacoes.append(nova_transacao)
+
+                    # Limpa o buffer para a próxima transação
+                    descricao_buffer.clear()
+
+                # 4. Se a linha não for nada disso, é provavelmente parte de uma descrição.
+                # Ignoramos linhas que são claramente cabeçalhos ou rodapés.
+                elif not any(palavra in linha for palavra in ["Movimentações", "Saldo final", "Extrato gerado", "CPF"]):
+                    descricao_buffer.append(linha)
+
+            if novas_transacoes:
+                db.session.add_all(novas_transacoes)
+                db.session.commit()
+                flash(f'{len(novas_transacoes)} transações importadas do PDF com sucesso!', 'success')
+            else:
+                flash('Nenhuma transação encontrada no formato esperado dentro do PDF.', 'warning')
+
+            if transacoes_recusadas > 0:
+                flash(f'{transacoes_recusadas} despesas foram ignoradas por saldo insuficiente.', 'warning')
+
+            return redirect(url_for("listar_transacoes"))
+
+        except Exception as e:
+            db.session.rollback()
+            print(f"Erro ao processar PDF: {e}")
+            flash('Ocorreu um erro complexo ao ler o ficheiro PDF.', 'danger')
+            return redirect(request.url)
+
+    return render_template('importar_pdf.html')
 
 @app.route('/importar', methods=['GET', 'POST'])
 def importar_csv():
@@ -363,7 +481,7 @@ def listar_transacoes():
         func.sum(Transacao.valor)
     ).filter(
         Transacao.id_usuario == usuario_id,
-        Transacao.tipo == 'receita',
+        Transacao.tipo == 'despesa',
         Transacao.categoria.ilike('Investimento'),
         # Filtra pelo mês e ano atuais
         func.extract('month', Transacao.data) == hoje.month,

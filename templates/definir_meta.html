@@ -30,7 +30,7 @@
                 <div class="mb-3">
                     <label for="meta" class="form-label">Valor da Meta (R$)</label>
                     <input type="number" step="0.01" class="form-control" id="meta" name="meta"
-                           value="{{ "%.2f" | format(meta_atual) }}"
+                           value= "{{ '%.2f' | format(meta_atual) }}"
                            placeholder="Ex: 1000.00" required>
                 </div>
                 <button type="submit" class="btn btn-primary-custom w-100">
