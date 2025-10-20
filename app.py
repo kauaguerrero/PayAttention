@@ -10,11 +10,15 @@ import io
 import re
 import pdfplumber
 from fpdf import FPDF
-from fpdf.enums import XPos, YPos  # Importar para a sintaxe moderna
+from fpdf.enums import XPos, YPos
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 app.config.from_object(Config)
-app.secret_key = 'sua_chave_secreta_aqui'
+app.secret_key = os.getenv('SECRET_KEY')
 db.init_app(app)
 
 
