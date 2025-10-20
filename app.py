@@ -1,14 +1,16 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, Response
 from static.database.config import Config
 from static.database.models import db, Transacao, Usuario, hash_senha, verificar_senha, Meta, GastoProgramado
 from sqlalchemy import func
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from decimal import Decimal
 import csv
 import io
 import re
 import pdfplumber
+from fpdf import FPDF
+from fpdf.enums import XPos, YPos  # Importar para a sintaxe moderna
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -16,15 +18,32 @@ app.secret_key = 'sua_chave_secreta_aqui'
 db.init_app(app)
 
 
+# --- CLASSE PDF PERSONALIZADA PARA LIDAR COM ENCODING E WARNINGS ---
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Helvetica', 'B', 15)
+        # Usando a sintaxe moderna para evitar DeprecationWarning
+        self.cell(0, 10, 'Relatorio de Despesas', new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+        self.ln(10)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Helvetica', 'I', 8)
+        # Usando a sintaxe moderna para evitar DeprecationWarning
+        self.cell(0, 10, f'Pagina {self.page_no()}/{{nb}}', new_x=XPos.RIGHT, new_y=YPos.TOP, align='C')
+
+
 # --- FUNÇÕES AUXILIARES ---
 
 def format_currency_brl(value):
     if value is None:
         return "0,00"
+    if not isinstance(value, Decimal):
+        value = Decimal(str(value))
     formatted_value = f"{value:,.2f}"
     return formatted_value.replace(',', 'X').replace('.', ',').replace('X', '.')
 
-# Registra a função como um filtro no Jinja2
+
 app.jinja_env.filters['format_brl'] = format_currency_brl
 
 
@@ -67,6 +86,8 @@ def calcular_saldo(usuario_id):
     saldo = entrada_total - saida_total
     return saldo, entrada_total, saida_total
 
+
+# --- CÓDIGO RESTAURADO: PROCESSAMENTO DE ARQUIVOS ---
 class ExtratorPDF:
     def __init__(self):
         self.padroes_data = [r'\b(\d{2})[/\-.](\d{2})[/\-.](\d{4})\b', r'\b(\d{2})[/\-.](\d{2})[/\-.](\d{2})\b',
@@ -94,7 +115,8 @@ class ExtratorPDF:
         valor_str = valor_str.lstrip('-');
         valor_str = valor_str.replace('.', '').replace(',', '.')
         try:
-            valor = float(valor_str); return -valor if negativo else valor
+            valor = float(valor_str);
+            return -valor if negativo else valor
         except:
             return 0.0
 
@@ -166,19 +188,16 @@ class ExtratorPDF:
             transacoes.append(transacao)
         return transacoes
 
-# LÓGICA DE PROCESSAMENTO DE FICHEIRO
 
 def processar_csv(arquivo, usuario_id):
     try:
         stream = io.StringIO(arquivo.stream.read().decode("UTF-8"), newline=None)
         csv_reader = csv.DictReader(stream)
         novas_transacoes = []
-
         for row in csv_reader:
             valor_num = Decimal(row.get('Valor', '0').strip())
             data_str = row.get('Data', '')
             data_transacao = datetime.strptime(data_str, '%d/%m/%Y').date() if data_str else datetime.now().date()
-
             nova_transacao = Transacao(
                 descricao=row.get('Descrição', 'Não informado'), valor=abs(valor_num),
                 tipo='receita' if valor_num > 0 else 'despesa',
@@ -186,20 +205,16 @@ def processar_csv(arquivo, usuario_id):
                 id_usuario=usuario_id, data=data_transacao, categoria='A Classificar'
             )
             novas_transacoes.append(nova_transacao)
-
         if not novas_transacoes:
             flash('Nenhuma transação encontrada no ficheiro CSV.', 'warning')
             return redirect(url_for('importar_extrato'))
-
         db.session.add_all(novas_transacoes)
         db.session.flush()
         ids_para_categorizar = [t.id_transacao for t in novas_transacoes]
         session['transacoes_a_categorizar'] = ids_para_categorizar
         db.session.commit()
-
         flash(f'{len(novas_transacoes)} transações importadas! Por favor, categorize-as abaixo.', 'info')
         return redirect(url_for('categorizar_transacoes_importadas'))
-
     except Exception as e:
         db.session.rollback()
         flash(f'Ocorreu um erro ao processar o ficheiro CSV: {e}', 'danger')
@@ -210,15 +225,12 @@ def processar_pdf(arquivo, usuario_id):
     try:
         extrator = ExtratorPDF()
         transacoes_extraidas = extrator.extrair_transacoes(arquivo)
-
         if not transacoes_extraidas:
             flash('Nenhuma transação encontrada no PDF.', 'warning')
             return redirect(url_for('importar_extrato'))
-
         saldo_atual, _, _ = calcular_saldo(usuario_id)
         novas_transacoes = []
         recusadas = 0
-
         for t in transacoes_extraidas:
             valor = Decimal(str(t['valor']))
             tipo = t['tipo']
@@ -233,40 +245,30 @@ def processar_pdf(arquivo, usuario_id):
                 data_transacao = datetime.strptime(t['data'], '%Y-%m-%d').date()
             except:
                 data_transacao = datetime.now().date()
-
-            # MUDANÇA: Usar 'A Classificar' em vez de 'Outros'
             nova_transacao = Transacao(
                 descricao=t['descricao'], valor=valor, tipo=tipo, beneficiario=t['beneficiario'],
                 id_usuario=usuario_id, data=data_transacao, categoria='A Classificar'
             )
             novas_transacoes.append(nova_transacao)
-
         if not novas_transacoes and recusadas == 0:
             flash('Nenhuma transação válida foi encontrada no PDF.', 'warning')
             return redirect(url_for('importar_extrato'))
-
-        # MUDANÇA: Adicionar a lógica correta de flush, session e commit
         db.session.add_all(novas_transacoes)
         db.session.flush()
         ids_para_categorizar = [t.id_transacao for t in novas_transacoes]
         session['transacoes_a_categorizar'] = ids_para_categorizar
         db.session.commit()
-
         flash(f'{len(novas_transacoes)} transações importadas! Por favor, categorize-as abaixo.', 'info')
-
         if recusadas > 0:
             flash(f'{recusadas} despesas ignoradas por saldo insuficiente.', 'warning')
-
         return redirect(url_for('categorizar_transacoes_importadas'))
-
     except Exception as e:
         db.session.rollback()
         flash(f'Erro ao processar PDF: {str(e)}', 'danger')
-        print(f"Erro no processamento de PDF: {e}")
         return redirect(url_for('importar_extrato'))
 
-# --- ROTA UNIFICADA DE IMPORTAÇÃO ---
 
+# --- ROTA RESTAURADA ---
 @app.route('/importar-extrato', methods=['GET', 'POST'])
 @login_required
 def importar_extrato():
@@ -274,11 +276,9 @@ def importar_extrato():
         if 'arquivo_extrato' not in request.files or not request.files['arquivo_extrato'].filename:
             flash('Nenhum ficheiro selecionado!', 'danger')
             return redirect(request.url)
-
         arquivo = request.files['arquivo_extrato']
         filename = arquivo.filename.lower()
         usuario_id = session['id_usuario']
-
         if filename.endswith('.csv'):
             return processar_csv(arquivo, usuario_id)
         elif filename.endswith('.pdf'):
@@ -286,20 +286,17 @@ def importar_extrato():
         else:
             flash('Formato não suportado. Use CSV ou PDF.', 'warning')
             return redirect(request.url)
-
     return render_template('importar_extrato.html')
 
 
-
+# --- ROTA RESTAURADA ---
 @app.route('/categorizar-importadas', methods=['GET', 'POST'])
 @login_required
 def categorizar_transacoes_importadas():
     usuario_id = session['id_usuario']
     ids_para_categorizar = session.get('transacoes_a_categorizar', [])
-
     if not ids_para_categorizar:
         return redirect(url_for('listar_transacoes'))
-
     if request.method == 'POST':
         for transacao_id in ids_para_categorizar:
             transacao = buscar_transacao(transacao_id, usuario_id)
@@ -307,41 +304,33 @@ def categorizar_transacoes_importadas():
                 nova_categoria = request.form.get(f'categoria_{transacao_id}')
                 if nova_categoria:
                     transacao.categoria = nova_categoria
-
         db.session.commit()
-        session.pop('transacoes_a_categorizar', None)  # Limpa a sessão
+        session.pop('transacoes_a_categorizar', None)
         flash("Transações categorizadas com sucesso!", "success")
         return redirect(url_for('listar_transacoes'))
-
-    # Método GET: Mostra a página de categorização
     transacoes = Transacao.query.filter(Transacao.id_transacao.in_(ids_para_categorizar),
                                         Transacao.id_usuario == usuario_id).all()
     transacoes_dict = [t.to_dict() for t in transacoes]
-
     return render_template('categorizar_importadas.html', transacoes=transacoes_dict)
 
 
-# --- ROTA DO DASHBOARD (ATUALIZADA) ---
-
+# ROTA DO DASHBOARD
 @app.route("/")
 @app.route("/dashboard")
 @login_required
 def listar_transacoes():
     usuario_id = session['id_usuario']
     hoje = datetime.now()
-
-    # Cálculo de saldo e outros dados (seu código existente)
     saldo, entrada_total, saida_total = calcular_saldo(usuario_id)
     meta_salva = Meta.query.filter_by(id_usuario=usuario_id, mes=hoje.month, ano=hoje.year).first()
     meta_investimento = meta_salva.valor if meta_salva else Decimal('0.00')
-    total_investido_query = db.session.query(func.sum(Transacao.valor)).filter(Transacao.id_usuario == usuario_id,
-                                                                               Transacao.tipo == 'despesa',
-                                                                               Transacao.categoria.ilike(
-                                                                                   'Investimento'),
-                                                                               func.extract('month',
-                                                                                            Transacao.data) == hoje.month,
-                                                                               func.extract('year',
-                                                                                            Transacao.data) == hoje.year).scalar()
+    total_investido_query = db.session.query(func.sum(Transacao.valor)).filter(
+        Transacao.id_usuario == usuario_id,
+        Transacao.tipo == 'despesa',
+        Transacao.categoria.ilike('Investimento'),
+        func.extract('month', Transacao.data) == hoje.month,
+        func.extract('year', Transacao.data) == hoje.year
+    ).scalar()
     total_investido = total_investido_query or Decimal('0.00')
     dados_gastos_categoria = db.session.query(
         Transacao.categoria,
@@ -352,30 +341,23 @@ def listar_transacoes():
         func.extract('month', Transacao.data) == hoje.month,
         func.extract('year', Transacao.data) == hoje.year
     ).group_by(Transacao.categoria).order_by(func.sum(Transacao.valor).desc()).all()
+
     categorias_labels = [item[0] for item in dados_gastos_categoria if item[0]]
     gastos_valores = [float(item[1]) for item in dados_gastos_categoria if item[0]]
-    cores_categoria = {
-        'Alimentação': '#FF6384', 'Transporte': '#36A2EB', 'Moradia': '#FFCE56',
-        'Lazer': '#4BC0C0', 'Saúde': '#9966FF', 'Investimento': '#FF9F40',
-        'Outros': '#C9CBCF', 'A Classificar': '#E7E9ED'
-    }
+    cores_categoria = {'Alimentação': '#FF6384', 'Transporte': '#36A2EB', 'Moradia': '#FFCE56', 'Lazer': '#4BC0C0',
+                       'Saúde': '#9966FF', 'Investimento': '#FF9F40', 'Outros': '#C9CBCF', 'A Classificar': '#E7E9ED'}
     todas_transacoes = Transacao.query.filter_by(id_usuario=usuario_id).order_by(Transacao.data.desc()).all()
     transacoes_dict = [t.to_dict() for t in todas_transacoes]
 
-    # Lógica para Gastos Programados
     gastos_programados_ativos = GastoProgramado.query.filter(
         GastoProgramado.id_usuario == usuario_id,
         (GastoProgramado.recorrente == True) | (GastoProgramado.parcelas_pagas < GastoProgramado.total_parcelas)
     ).all()
 
     total_gastos_programados_mes = sum(g.valor_parcela for g in gastos_programados_ativos)
-
-    # Mantenha como Decimal
     saldo_apos_gastos = saldo - total_gastos_programados_mes
 
-    # Percentuais para o gráfico de barras (aqui float é aceitável)
     if saldo > 0:
-        # A divisão resulta em Decimal, convertemos para float para o template
         percentual_gastos = float(
             (total_gastos_programados_mes / saldo) * 100) if total_gastos_programados_mes < saldo else 100
         percentual_sobra = 100 - percentual_gastos if total_gastos_programados_mes < saldo else 0
@@ -384,27 +366,78 @@ def listar_transacoes():
         percentual_sobra = 0
 
     return render_template(
-        "dashboard.html",
-        transacoes=transacoes_dict,
-        saldo=saldo,  # Decimal
-        entrada_total=float(entrada_total),  # Usado em Chart.js, float é ok
-        saida_total=float(saida_total),  # Usado em Chart.js, float é ok
-        meta_investimento=float(meta_investimento),  # Usado em Chart.js, float é ok
-        total_investido=float(total_investido),  # Usado em Chart.js, float é ok
-        categorias_labels=categorias_labels,
-        gastos_valores=gastos_valores,
-        cores_categoria=cores_categoria,
-
-        # Enviando como Decimal para permitir cálculos no template
-        gastos_programados=gastos_programados_ativos,
-        total_gastos_programados_mes=total_gastos_programados_mes,  # MANTIDO COMO DECIMAL
-        saldo_apos_gastos=saldo_apos_gastos,  # MANTIDO COMO DECIMAL
-
-        # Enviando como float para usar em CSS (width: XX%)
-        percentual_gastos=percentual_gastos,
-        percentual_sobra=percentual_sobra
+        "dashboard.html", transacoes=transacoes_dict, saldo=saldo, entrada_total=float(entrada_total),
+        saida_total=float(saida_total), meta_investimento=float(meta_investimento),
+        total_investido=float(total_investido),
+        categorias_labels=categorias_labels, gastos_valores=gastos_valores, cores_categoria=cores_categoria,
+        gastos_programados=gastos_programados_ativos, total_gastos_programados_mes=total_gastos_programados_mes,
+        saldo_apos_gastos=saldo_apos_gastos, percentual_gastos=percentual_gastos, percentual_sobra=percentual_sobra
     )
 
+
+# ROTA PARA GERAR RELATÓRIO PDF (VERSÃO FINAL)
+@app.route('/gerar-relatorio-pdf', methods=['POST'])
+@login_required
+def gerar_relatorio_pdf():
+    periodo = request.form.get('periodo', 'mes')
+    hoje = date.today()
+    periodo_texto = "Período Inválido"
+
+    if periodo == 'mes':
+        data_inicio = hoje.replace(day=1)
+        periodo_texto = f"Mês de {hoje.strftime('%B de %Y')}"
+    elif periodo == '15dias':
+        data_inicio = hoje - timedelta(days=15)
+        periodo_texto = f"Últimos 15 dias (de {data_inicio.strftime('%d/%m/%Y')} a {hoje.strftime('%d/%m/%Y')})"
+    elif periodo == '5dias':
+        data_inicio = hoje - timedelta(days=5)
+        periodo_texto = f"Últimos 5 dias (de {data_inicio.strftime('%d/%m/%Y')} a {hoje.strftime('%d/%m/%Y')})"
+    else:
+        flash("Período selecionado inválido.", "danger")
+        return redirect(url_for('listar_transacoes'))
+
+    transacoes = Transacao.query.filter(
+        Transacao.id_usuario == session['id_usuario'],
+        Transacao.tipo == 'despesa',
+        Transacao.data >= data_inicio
+    ).order_by(Transacao.data.desc()).all()
+
+    if not transacoes:
+        flash(f"Nenhuma despesa encontrada para o período selecionado.", "warning")
+        return redirect(url_for('listar_transacoes'))
+
+    pdf = PDF()
+    pdf.alias_nb_pages()
+    pdf.add_page()
+
+    pdf.set_font('Helvetica', '', 12)
+    pdf.cell(0, 10, periodo_texto, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.cell(25, 10, 'Data', border=1, new_x=XPos.RIGHT, new_y=YPos.TOP, align='C')
+    pdf.cell(85, 10, 'Descricao', border=1, new_x=XPos.RIGHT, new_y=YPos.TOP, align='C')
+    pdf.cell(40, 10, 'Categoria', border=1, new_x=XPos.RIGHT, new_y=YPos.TOP, align='C')
+    pdf.cell(30, 10, 'Valor (R$)', border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+
+    pdf.set_font('Helvetica', '', 10)
+    total_despesas = Decimal(0)
+    for t in transacoes:
+        pdf.cell(25, 10, t.data.strftime('%d/%m/%Y'), border=1, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.cell(85, 10, t.descricao, border=1, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.cell(40, 10, t.categoria, border=1, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.cell(30, 10, format_currency_brl(t.valor), border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='R')
+        total_despesas += t.valor
+
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.cell(150, 10, 'Total de Despesas', border=1, new_x=XPos.RIGHT, new_y=YPos.TOP, align='R')
+    pdf.cell(30, 10, format_currency_brl(total_despesas), border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='R')
+
+    return Response(bytes(pdf.output()),
+                    mimetype='application/pdf',
+                    headers={'Content-Disposition': 'attachment;filename=relatorio_despesas.pdf'})
+
+
+# ROTAS DE USUÁRIO
 @app.route("/login", methods=["GET", "POST"])
 def fazer_login():
     if 'id_usuario' in session: return redirect(url_for("listar_transacoes"))
@@ -417,7 +450,8 @@ def fazer_login():
             flash(f"Bem-vindo(a), {session['nome_usuario']}!", "success");
             return redirect(url_for("listar_transacoes"))
         else:
-            flash("E-mail ou senha inválidos.", "error"); return redirect(url_for("fazer_login"))
+            flash("E-mail ou senha inválidos.", "error");
+            return redirect(url_for("fazer_login"))
     return render_template("login.html")
 
 
@@ -461,11 +495,12 @@ def gerenciar_perfil():
         if nova_senha: usuario.senha = hash_senha(nova_senha)
         db.session.commit();
         flash("Perfil atualizado!", "success")
-        session['nome_usuario'] = usuario.nome.split()[0]  # Atualiza o nome na sessão
+        session['nome_usuario'] = usuario.nome.split()[0]
         return redirect(url_for("gerenciar_perfil"))
     return render_template("perfil.html", usuario=usuario)
 
 
+# ROTAS DE TRANSAÇÃO
 @app.route("/cadastrar_transacao", methods=["GET", "POST"])
 @login_required
 def cadastrar_transacao():
@@ -476,7 +511,8 @@ def cadastrar_transacao():
             "type"].strip().lower()
         beneficiario, categoria = request.form.get("beneficiario", "N/A"), request.form.get("categoria", "Outros")
     except ValueError:
-        flash("Valor inválido.", "error"); return redirect(url_for("cadastrar_transacao"))
+        flash("Valor inválido.", "error");
+        return redirect(url_for("cadastrar_transacao"))
     saldo_atual, _, _ = calcular_saldo(usuario_id)
     if tipo == "despesa" and valor > saldo_atual: flash(f"Despesa de R$ {valor:.2f} excede o saldo.",
                                                         "error"); return redirect(url_for("cadastrar_transacao"))
@@ -517,6 +553,7 @@ def apagar_transacao(id):
         flash("Transação não encontrada.", "error")
     return redirect(url_for("listar_transacoes"))
 
+
 @app.route("/apagar_todas", methods=["POST"])
 @login_required
 def apagar_todas_transacoes():
@@ -527,10 +564,11 @@ def apagar_todas_transacoes():
         flash("Todas as suas transações foram excluídas com sucesso!", "success")
     except Exception as e:
         db.session.rollback()
-        print(f"Erro ao apagar todas as transações: {e}")
         flash("Ocorreu um erro ao tentar excluir as transações.", "danger")
     return redirect(url_for('listar_transacoes'))
 
+
+# ROTAS DE METAS E GASTOS
 @app.route("/meta", methods=["GET", "POST"])
 @login_required
 def gerenciar_meta():
@@ -541,12 +579,15 @@ def gerenciar_meta():
         try:
             novo_valor_meta = Decimal(request.form['meta'])
         except (ValueError, KeyError):
-            flash("Valor de meta inválido.", "error"); return redirect(url_for('gerenciar_meta'))
+            flash("Valor de meta inválido.", "error");
+            return redirect(url_for('gerenciar_meta'))
         if meta_atual:
-            meta_atual.valor = novo_valor_meta; flash("Meta atualizada!", "success")
+            meta_atual.valor = novo_valor_meta;
+            flash("Meta atualizada!", "success")
         else:
-            nova_meta = Meta(valor=novo_valor_meta, mes=hoje.month, ano=hoje.year,
-                             id_usuario=usuario_id); db.session.add(nova_meta); flash("Meta definida!", "success")
+            nova_meta = Meta(valor=novo_valor_meta, mes=hoje.month, ano=hoje.year, id_usuario=usuario_id);
+            db.session.add(nova_meta);
+            flash("Meta definida!", "success")
         db.session.commit();
         return redirect(url_for('listar_transacoes'))
     valor_meta_existente = meta_atual.valor if meta_atual else Decimal('0.00')
@@ -559,23 +600,15 @@ def adicionar_gasto_programado():
     if request.method == "POST":
         descricao = request.form.get("descricao")
         valor_parcela = Decimal(request.form.get("valor_parcela"))
-        tipo_gasto = request.form.get("tipo_gasto")  # 'recorrente' ou 'parcelado'
-
-        novo_gasto = GastoProgramado(
-            descricao=descricao,
-            valor_parcela=valor_parcela,
-            recorrente=(tipo_gasto == 'recorrente'),
-            id_usuario=session['id_usuario']
-        )
-
+        tipo_gasto = request.form.get("tipo_gasto")
+        novo_gasto = GastoProgramado(descricao=descricao, valor_parcela=valor_parcela,
+                                     recorrente=(tipo_gasto == 'recorrente'), id_usuario=session['id_usuario'])
         if tipo_gasto == 'parcelado':
             novo_gasto.total_parcelas = int(request.form.get("total_parcelas"))
-
         db.session.add(novo_gasto)
         db.session.commit()
         flash("Gasto programado adicionado com sucesso!", "success")
         return redirect(url_for('listar_transacoes'))
-
     return render_template("adicionar_gasto_programado.html")
 
 
@@ -583,38 +616,26 @@ def adicionar_gasto_programado():
 @login_required
 def pagar_parcela_gasto(id):
     gasto = GastoProgramado.query.filter_by(id_gasto=id, id_usuario=session['id_usuario']).first()
-
     if not gasto:
-        flash("Gasto programado não encontrado.", "error")
+        flash("Gasto programado não encontrado.", "error");
         return redirect(url_for('listar_transacoes'))
-
     saldo_atual, _, _ = calcular_saldo(session['id_usuario'])
     if gasto.valor_parcela > saldo_atual:
-        flash(f"Saldo insuficiente para pagar '{gasto.descricao}'.", "error")
+        flash(f"Saldo insuficiente para pagar '{gasto.descricao}'.", "error");
         return redirect(url_for('listar_transacoes'))
-
-    # 1. Cria a transação de despesa
     nova_transacao = Transacao(
         descricao=f"Pagamento: {gasto.descricao}" + (
             f" ({gasto.parcelas_pagas + 1}/{gasto.total_parcelas})" if not gasto.recorrente else ""),
-        valor=gasto.valor_parcela,
-        tipo='despesa',
-        beneficiario=gasto.descricao,
-        categoria='Contas Programadas',  # Ou outra categoria que você queira
+        valor=gasto.valor_parcela, tipo='despesa', beneficiario=gasto.descricao, categoria='Contas Programadas',
         id_usuario=session['id_usuario']
     )
     db.session.add(nova_transacao)
-
-    # 2. Atualiza o contador de parcelas pagas
     gasto.parcelas_pagas += 1
-
-    # Se todas as parcelas foram pagas, apaga o gasto programado
     if not gasto.recorrente and gasto.parcelas_pagas >= gasto.total_parcelas:
         db.session.delete(gasto)
         flash(f"Última parcela de '{gasto.descricao}' paga. Gasto finalizado!", "info")
     else:
         flash(f"Parcela de '{gasto.descricao}' paga com sucesso!", "success")
-
     db.session.commit()
     return redirect(url_for('listar_transacoes'))
 
