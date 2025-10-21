@@ -24,15 +24,23 @@ db.init_app(app)
 
 # --- CLASSE PDF PERSONALIZADA PARA LIDAR COM ENCODING E WARNINGS ---
 class PDF(FPDF):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        font_dir = os.path.join(os.path.dirname(__file__), 'static', 'fonts')
+
+        self.add_font('DejaVu', '', os.path.join(font_dir, 'DejaVuSans.ttf'))
+        self.add_font('DejaVu', 'B', os.path.join(font_dir, 'DejaVuSans-Bold.ttf'))
+        self.add_font('DejaVu', 'I', os.path.join(font_dir, 'DejaVuSans-Oblique.ttf'))
+
     def header(self):
-        self.set_font('Helvetica', 'B', 15)
+        self.set_font('DejaVu', 'B', 15)
         # Usando a sintaxe moderna para evitar DeprecationWarning
         self.cell(0, 10, 'Relatorio de Despesas', new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
         self.ln(10)
 
     def footer(self):
         self.set_y(-15)
-        self.set_font('Helvetica', 'I', 8)
+        self.set_font('DejaVu', 'I', 8)
         # Usando a sintaxe moderna para evitar DeprecationWarning
         self.cell(0, 10, f'Pagina {self.page_no()}/{{nb}}', new_x=XPos.RIGHT, new_y=YPos.TOP, align='C')
 
@@ -379,7 +387,6 @@ def listar_transacoes():
     )
 
 
-# ROTA PARA GERAR RELATÓRIO PDF (VERSÃO FINAL)
 @app.route('/gerar-relatorio-pdf', methods=['POST'])
 @login_required
 def gerar_relatorio_pdf():
@@ -414,32 +421,48 @@ def gerar_relatorio_pdf():
     pdf.alias_nb_pages()
     pdf.add_page()
 
-    pdf.set_font('Helvetica', '', 12)
+    pdf.set_font('DejaVu', '', 12)
     pdf.cell(0, 10, periodo_texto, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
 
-    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_font('DejaVu', 'B', 10)
     pdf.cell(25, 10, 'Data', border=1, new_x=XPos.RIGHT, new_y=YPos.TOP, align='C')
     pdf.cell(85, 10, 'Descricao', border=1, new_x=XPos.RIGHT, new_y=YPos.TOP, align='C')
     pdf.cell(40, 10, 'Categoria', border=1, new_x=XPos.RIGHT, new_y=YPos.TOP, align='C')
     pdf.cell(30, 10, 'Valor (R$)', border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
 
-    pdf.set_font('Helvetica', '', 10)
+    pdf.set_font('DejaVu', '', 10)
     total_despesas = Decimal(0)
+
+    col_width_desc = 85
+    col_width_cat = 40
+    padding = 4
+
     for t in transacoes:
+        descricao_texto = t.descricao
+        if pdf.get_string_width(descricao_texto) > col_width_desc - padding:
+            while pdf.get_string_width(descricao_texto + '...') > col_width_desc - padding:
+                descricao_texto = descricao_texto[:-1]
+            descricao_texto += '...'
+
+        categoria_texto = t.categoria
+        if pdf.get_string_width(categoria_texto) > col_width_cat - padding:
+            while pdf.get_string_width(categoria_texto + '...') > col_width_cat - padding:
+                categoria_texto = categoria_texto[:-1]
+            categoria_texto += '...'
+
         pdf.cell(25, 10, t.data.strftime('%d/%m/%Y'), border=1, new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.cell(85, 10, t.descricao, border=1, new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.cell(40, 10, t.categoria, border=1, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.cell(col_width_desc, 10, descricao_texto, border=1, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.cell(col_width_cat, 10, categoria_texto, border=1, new_x=XPos.RIGHT, new_y=YPos.TOP)
         pdf.cell(30, 10, format_currency_brl(t.valor), border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='R')
         total_despesas += t.valor
 
-    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_font('DejaVu', 'B', 10)
     pdf.cell(150, 10, 'Total de Despesas', border=1, new_x=XPos.RIGHT, new_y=YPos.TOP, align='R')
     pdf.cell(30, 10, format_currency_brl(total_despesas), border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='R')
 
     return Response(bytes(pdf.output()),
                     mimetype='application/pdf',
                     headers={'Content-Disposition': 'attachment;filename=relatorio_despesas.pdf'})
-
 
 # ROTAS DE USUÁRIO
 @app.route("/login", methods=["GET", "POST"])

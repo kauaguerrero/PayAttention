@@ -37,8 +37,36 @@ Antes de começar, você vai precisar ter instalado em sua máquina as seguintes
 - Tudo que estiver contido no requirements.txt
 - Além de um editor de código como o [VSCode](https://code.visualstudio.com/)
 
-### Clonando o Repositório
+## 🚀 Como Rodar o Projeto Localmente
 
-```bash
-git clone [https://github.com/kauaguerrero/PayAttention.git](https://github.com/kauaguerrero/PayAttention.git)
-cd PayAttention
+1.  Clone o repositório:
+    ```bash
+    git clone [URL_DO_SEU_REPOSITORIO]
+    cd PayAttention_FINAL
+    ```
+
+2.  Crie e ative um ambiente virtual:
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # No Windows: venv\Scripts\activate
+    ```
+
+3.  Instale as dependências:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4.  **Crie seu arquivo de ambiente:**
+    Copie o arquivo de exemplo para criar seu arquivo `.env` local.
+    ```bash
+    # No Linux/macOS
+    cp .env.example .env
+    
+    # No Windows (Prompt de Comando)
+    copy .env.example .env
+    ```
+
+5.  Rode a aplicação:
+    ```bash
+    python app.py
+    ```
