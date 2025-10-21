@@ -4,14 +4,21 @@
 
 {% block head_extra %}
     <style>
-        :root { --cor-principal: #2b5735; --cor-sucesso: #28a745; --cor-perigo: #d9534f; --cor-texto-claro: #1c1c1c; --cor-fundo-claro: #f8f9fa; }
+        :root { --cor-principal: #2b5735; --cor-sucesso: #28a745; --cor-perigo: #d9534f; --cor-texto-claro: #1c1c1c; --cor-fundo-claro: #f8f9fa; --cor-cinza-claro: #e9ecef;}
         body { background-color: var(--cor-fundo-claro); color: var(--cor-texto-claro); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .saldo-total { font-size: 1.8rem; font-weight: 700; color: var(--cor-principal); }
         .grafico-container { position: relative; height: 350px; width: 100%; margin: 0 auto; }
         .card { box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e9eef0; transition: transform 0.2s ease-in-out; }
         .card:hover { transform: translateY(-5px); }
-        .badge-categoria { color: #fff; } /* Garante que o texto da badge seja branco */
+        .badge-categoria { color: #fff; }
 
+        /* --- NOVO ESTILO PARA O MINI GRÁFICO --- */
+        .mini-pie-chart {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            margin-right: 12px;
+        }
     </style>
 {% endblock %}
 
@@ -49,25 +56,49 @@
         <div class="col-md-6 mb-4">
             <div class="card">
                 <div class="card-body">
-                    <div class="d-flex justify-content-between">
-                        <h5 class="card-title">{{ gasto.descricao }}</h5>
+                    <!-- --- INÍCIO DA MODIFICAÇÃO --- -->
+
+                    {% if not gasto.recorrente %}
+                        {# Cálculos dos valores para usar no template #}
+                        {% set valor_pago = gasto.valor_parcela * gasto.parcelas_pagas %}
+                        {% set valor_total = gasto.valor_parcela * gasto.total_parcelas %}
+                        {% set valor_restante = valor_total - valor_pago %}
+                        {% set percentual_pago = (gasto.parcelas_pagas / gasto.total_parcelas) * 100 %}
+                    {% endif %}
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            {# Mostra o gráfico de pizza apenas para gastos parcelados #}
+                            {% if not gasto.recorrente %}
+                                <div class="mini-pie-chart"
+                                     style="background: conic-gradient(var(--cor-sucesso) {{ percentual_pago }}%, var(--cor-cinza-claro) 0);"
+                                     title="{{ percentual_pago | round(1) }}% pago">
+                                </div>
+                            {% endif %}
+                            <h5 class="card-title mb-0">{{ gasto.descricao }}</h5>
+                        </div>
                         <span class="fw-bold fs-5 text-danger">R$ {{ gasto.valor_parcela | format_brl }}</span>
                     </div>
 
                     {% if not gasto.recorrente %}
-                    <p class="card-text mb-2 text-muted">
-                        Progresso: {{ gasto.parcelas_pagas }} de {{ gasto.total_parcelas }} parcelas pagas.
-                    </p>
-                    <div class="progress mb-3" style="height: 10px;">
-                        <div class="progress-bar bg-success" role="progressbar"
-                             style="width: {{ (gasto.parcelas_pagas / gasto.total_parcelas) * 100 }}%;"
-                             aria-valuenow="{{ gasto.parcelas_pagas }}"
-                             aria-valuemin="0"
-                             aria-valuemax="{{ gasto.total_parcelas }}"></div>
-                    </div>
+                        {# Novos textos de valor pago e restante #}
+                        <div class="d-flex justify-content-between small mt-3 mb-1 text-muted">
+                            <span>Pago: <span class="fw-bold" style="color: var(--cor-sucesso);">R$ {{ valor_pago | format_brl }}</span></span>
+                            <span>Restante: <span class="fw-bold">R$ {{ valor_restante | format_brl }}</span></span>
+                        </div>
+
+                        <div class="progress mb-3" style="height: 10px;">
+                            <div class="progress-bar bg-success" role="progressbar"
+                                 style="width: {{ percentual_pago }}%;"
+                                 aria-valuenow="{{ gasto.parcelas_pagas }}"
+                                 aria-valuemin="0"
+                                 aria-valuemax="{{ gasto.total_parcelas }}"></div>
+                        </div>
                     {% else %}
-                    <p class="card-text mb-2 text-muted">Pagamento recorrente mensal.</p>
+                        <p class="card-text my-3 text-muted">Pagamento recorrente mensal.</p>
                     {% endif %}
+
+                    <!-- --- FIM DA MODIFICAÇÃO --- -->
 
                     <div class="d-flex justify-content-end">
                          <form method="POST" action="{{ url_for('pagar_parcela_gasto', id=gasto.id_gasto) }}" class="me-2">
