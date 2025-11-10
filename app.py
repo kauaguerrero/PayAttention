@@ -14,20 +14,13 @@ from fpdf.enums import XPos, YPos
 import os
 from dotenv import load_dotenv
 
-if not os.getenv('POSTGRES_HOST'):
-    from dotenv import load_dotenv
-    load_dotenv()
+load_dotenv()
 
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = os.getenv('SECRET_KEY')
-
-database_url = os.environ.get('DATABASE_URL')
-if database_url:
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 db.init_app(app)
+
 
 # --- CLASSE PDF PERSONALIZADA PARA LIDAR COM ENCODING E WARNINGS ---
 class PDF(FPDF):
@@ -688,5 +681,6 @@ def apagar_gasto_programado(id):
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    with app.app_context():
+        db.create_all()
+    app.run(debug=True)
