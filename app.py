@@ -14,7 +14,9 @@ from fpdf.enums import XPos, YPos
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+if not os.getenv('POSTGRES_HOST'):
+    from dotenv import load_dotenv
+    load_dotenv()
 
 app = Flask(__name__)
 app.config.from_object(Config)
