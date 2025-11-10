@@ -7,11 +7,13 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'chave-super-secreta-para-dev')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    DATABASE_URL = os.getenv('DATABASE_URL')
+    pg_user = os.getenv('POSTGRES_USER')
+    pg_pass = os.getenv('POSTGRES_PASSWORD')
+    pg_host = os.getenv('POSTGRES_HOST')
+    pg_port = os.getenv('POSTGRES_PORT')
+    pg_db = os.getenv('POSTGRES_DB')
 
-    if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-    SQLALCHEMY_DATABASE_URI = DATABASE_URL or 'sqlite:///' + os.path.join(BASE_DIR, 'dados_financeiros.db')
-
-    DEBUG = os.getenv('FLASK_ENV') == 'development'
+    if all([pg_user, pg_pass, pg_host, pg_port, pg_db]):
+        SQLALCHEMY_DATABASE_URI = f"postgresql://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}"
+    else:
+        SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(BASE_DIR, 'dados_financeiros.db')
